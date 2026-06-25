@@ -219,14 +219,21 @@ def chat():
 
 
 # ---------------------------------------------------------------------------
-# WhatsApp Cloud API webhook
+# WhatsApp Cloud API webhook — conversational order flow
 # ---------------------------------------------------------------------------
 
 WA_TOKEN    = os.environ.get("WA_TOKEN", "")
 WA_PHONE_ID = os.environ.get("WA_PHONE_ID", "")
 WA_VERIFY   = os.environ.get("WA_VERIFY_TOKEN", "icestasy_verify")
 
-_processed_msg_ids: set = set()  # prevent duplicate order on webhook retries
+_processed_msg_ids: set = set()
+
+# Per-user session state  {phone: {"state": str, "cart": [], "payment": str,
+#                                   "client": {}, "addresses": [], "shipping_id": int}}
+_wa_sessions: dict = {}
+
+PAYMENT_OPTIONS = {"1": "advance", "2": "invoice", "3": "credit",
+                   "advance": "advance", "invoice": "invoice", "credit": "credit"}
 
 
 def _wa_send(to: str, text: str):
@@ -241,10 +248,213 @@ def _wa_send(to: str, text: str):
     )
 
 
+def _fmt_inr(n):
+    return f"₹{n:,.0f}"
+
+
+def _cart_summary(cart):
+    lines = []
+    for idx, i in enumerate(cart, 1):
+        lines.append(
+            f"{idx}. {i['qty']} × {i['flavour_name']} {i['format_name']} "
+            f"— {_fmt_inr(i['qty'] * i['unit_price'])}"
+        )
+    subtotal = sum(i["qty"] * i["unit_price"] for i in cart)
+    lines.append(f"\n*Subtotal: {_fmt_inr(subtotal)}*")
+    return "\n".join(lines)
+
+
+def _handle_wa_message(from_no: str, text: str) -> str:
+    sess = _wa_sessions.get(from_no, {"state": "idle"})
+    t = text.strip().lower()
+
+    # ── CANCEL anytime ──────────────────────────────────────────────────────
+    if t in ("cancel", "reset", "start over", "restart"):
+        _wa_sessions.pop(from_no, None)
+        return "Order cancelled. Send a new message whenever you're ready. 👍"
+
+    state = sess.get("state", "idle")
+
+    # ── IDLE: detect cart items ──────────────────────────────────────────────
+    if state == "idle":
+        cart = parse_cart_items(text)
+        if not cart:
+            # Fall back to RAG Q&A
+            sku_res = resolve_sku(text)
+            chunks  = vector_search(text, top_k=3)
+            prompt  = build_prompt(text, sku_res, chunks)
+            result  = call_llm(prompt)
+            return result["parsed"].get("reply_message") or result["raw"][:800]
+
+        _wa_sessions[from_no] = {"state": "cart_review", "cart": cart}
+        summary = _cart_summary(cart)
+        return (
+            f"🛒 *Order Cart*\n\n{summary}\n\n"
+            "Reply *yes* to confirm, or *cancel* to discard."
+        )
+
+    # ── CART REVIEW: waiting for yes/no ─────────────────────────────────────
+    if state == "cart_review":
+        if t in ("yes", "y", "confirm", "ok", "haan", "ha", "proceed"):
+            sess["state"] = "payment"
+            _wa_sessions[from_no] = sess
+            return (
+                "💳 *Payment mode?*\n\n"
+                "1. Advance\n2. Invoice\n3. Credit\n\n"
+                "Reply with the number or name."
+            )
+        if t in ("no", "n", "nahi", "nope"):
+            _wa_sessions.pop(from_no, None)
+            return "Order cancelled. Send a new message whenever you're ready. 👍"
+        return "Please reply *yes* to confirm the order or *cancel* to discard it."
+
+    # ── PAYMENT: waiting for payment mode ───────────────────────────────────
+    if state == "payment":
+        payment = PAYMENT_OPTIONS.get(t)
+        if not payment:
+            return "Please reply 1 (Advance), 2 (Invoice), or 3 (Credit)."
+        sess["payment"] = payment
+        sess["state"]   = "client_search"
+        _wa_sessions[from_no] = sess
+        return f"✅ Payment: *{payment.title()}*\n\nNow type the *client name* or phone number to search."
+
+    # ── CLIENT SEARCH: waiting for search query ──────────────────────────────
+    if state == "client_search":
+        try:
+            from order_engine import search_clients
+            results = search_clients(text)
+        except Exception as e:
+            return f"Client search failed: {e}"
+        if not results:
+            return "No clients found. Try a different name or phone number."
+        sess["client_options"] = results
+        sess["state"] = "client_select"
+        _wa_sessions[from_no] = sess
+        lines = [f"{i+1}. {c['business_name']} ({c.get('primary_contact_phone','')})"
+                 for i, c in enumerate(results[:5])]
+        return "Found these clients:\n\n" + "\n".join(lines) + "\n\nReply with the *number* to select."
+
+    # ── CLIENT SELECT: waiting for number ───────────────────────────────────
+    if state == "client_select":
+        options = sess.get("client_options", [])
+        try:
+            idx = int(t) - 1
+            assert 0 <= idx < len(options)
+        except (ValueError, AssertionError):
+            return f"Please reply with a number between 1 and {len(options)}."
+        client = options[idx]
+        sess["client"] = client
+        # Load addresses
+        try:
+            from order_engine import get_client_addresses, _addr_label
+            addrs = get_client_addresses(client["id"])
+        except Exception:
+            addrs = []
+        sess["addresses"] = addrs
+        if addrs:
+            sess["state"] = "address_select"
+            _wa_sessions[from_no] = sess
+            addr_lines = [f"{i+1}. {_addr_label(a)}" for i, a in enumerate(addrs)]
+            return (
+                f"✅ Client: *{client['business_name']}*\n\n"
+                "📦 *Shipping address?*\n\n" + "\n".join(addr_lines) +
+                "\n\nReply with the number."
+            )
+        else:
+            # No addresses — skip to confirm
+            sess["state"] = "confirm"
+            sess["shipping_id"] = None
+            _wa_sessions[from_no] = sess
+            return _confirm_prompt(sess)
+
+    # ── ADDRESS SELECT ───────────────────────────────────────────────────────
+    if state == "address_select":
+        addrs = sess.get("addresses", [])
+        try:
+            idx = int(t) - 1
+            assert 0 <= idx < len(addrs)
+        except (ValueError, AssertionError):
+            return f"Please reply with a number between 1 and {len(addrs)}."
+        sess["shipping_id"] = addrs[idx]["id"]
+        sess["state"] = "confirm"
+        _wa_sessions[from_no] = sess
+        return _confirm_prompt(sess)
+
+    # ── CONFIRM: final yes/no ────────────────────────────────────────────────
+    if state == "confirm":
+        if t in ("yes", "y", "confirm", "ok", "haan", "ha"):
+            return _place_order(from_no, sess)
+        if t in ("no", "n", "nahi", "nope"):
+            _wa_sessions.pop(from_no, None)
+            return "Order cancelled. Send a new message whenever you're ready. 👍"
+        return "Reply *yes* to place the order or *cancel* to discard."
+
+    # Fallback: reset
+    _wa_sessions.pop(from_no, None)
+    return "Something went wrong. Please send your order again."
+
+
+def _confirm_prompt(sess):
+    client  = sess["client"]
+    payment = sess["payment"]
+    cart    = sess["cart"]
+    summary = _cart_summary(cart)
+    return (
+        f"📋 *Order Summary*\n\n"
+        f"*Client:* {client['business_name']}\n"
+        f"*Payment:* {payment.title()}\n\n"
+        f"{summary}\n\n"
+        "Reply *yes* to place this order or *cancel* to discard."
+    )
+
+
+def _place_order(from_no: str, sess: dict) -> str:
+    try:
+        from order_engine import create_order
+        cart    = sess["cart"]
+        client  = sess["client"]
+        payment = sess["payment"]
+        ship_id = sess.get("shipping_id")
+        lines = [{
+            "sku_id":        i["sku_id"],
+            "sku_code":      i["sku_code"],
+            "flavour_name":  i["flavour_name"],
+            "format_name":   i["format_name"],
+            "quantity":      i["qty"],
+            "unit_price":    i["unit_price"],
+            "line_discount": 0.0,
+        } for i in cart]
+        order = create_order(
+            client_id=client["id"],
+            payment_mode=payment,
+            lines=lines,
+            shipping_address_id=ship_id,
+            billing_address_id=ship_id,
+        )
+        total    = order.get("total", sum(i["qty"] * i["unit_price"] for i in cart))
+        order_no = order.get("order_no", "#")
+        _wa_sessions.pop(from_no, None)
+        item_lines = "\n".join(
+            f"  • {i['qty']} × {i['flavour_name']} {i['format_name']} — {_fmt_inr(i['qty']*i['unit_price'])}"
+            for i in cart
+        )
+        return (
+            f"✅ *Order Confirmed!*\n\n"
+            f"*Order No:* {order_no}\n"
+            f"*Client:* {client['business_name']}\n"
+            f"*Payment:* {payment.title()}\n\n"
+            f"{item_lines}\n\n"
+            f"*Total: {_fmt_inr(total)}*\n\n"
+            "Order has been registered in the system. 🎉"
+        )
+    except Exception as e:
+        _wa_sessions.pop(from_no, None)
+        return f"❌ Order failed: {e}"
+
+
 @app.route("/whatsapp", methods=["GET"])
 @app.route("/webhook", methods=["GET"])
 def whatsapp_verify():
-    """Meta webhook verification handshake."""
     if (request.args.get("hub.mode") == "subscribe" and
             request.args.get("hub.verify_token") == WA_VERIFY):
         return request.args.get("hub.challenge", ""), 200
@@ -254,7 +464,6 @@ def whatsapp_verify():
 @app.route("/whatsapp", methods=["POST"])
 @app.route("/webhook", methods=["POST"])
 def whatsapp_message():
-    """Receive incoming WhatsApp messages and reply via RAG pipeline."""
     body = request.get_json(force=True)
     try:
         entry   = body["entry"][0]["changes"][0]["value"]
@@ -263,72 +472,19 @@ def whatsapp_message():
         from_no = msg["from"]
         text    = msg.get("text", {}).get("body", "").strip()
     except (KeyError, IndexError):
-        return "ok", 200  # not a text message event
+        return "ok", 200
 
     if not text:
         return "ok", 200
 
-    # Deduplicate — Meta retries the webhook on slow responses
     if msg_id and msg_id in _processed_msg_ids:
         return "ok", 200
     if msg_id:
         _processed_msg_ids.add(msg_id)
-        if len(_processed_msg_ids) > 500:  # cap memory
+        if len(_processed_msg_ids) > 500:
             _processed_msg_ids.clear()
 
-    # Run through RAG pipeline synchronously
-    sku_res  = resolve_sku(text)
-    chunks   = vector_search(text, top_k=3)
-    prompt   = build_prompt(text, sku_res, chunks)
-    result   = call_llm(prompt)
-    parsed   = result["parsed"]
-    reply    = parsed.get("reply_message") or result["raw"][:1000]
-
-    # Auto-create order only when: explicit order intent + specific SKU resolved + LLM confirms
-    ORDER_KEYWORDS = ("order", "book", "place", "chahiye", "dena", "bhejo", "send me", "i want", "i need")
-    has_intent = any(kw in text.lower() for kw in ORDER_KEYWORDS)
-    # Only parse cart if a flavour was actually identified (prevents false defaults)
-    cart_items = parse_cart_items(text) if (has_intent and sku_res["flavour_id"]) else []
-
-    if cart_items:
-        try:
-            from order_engine import search_clients, create_order, get_sku_price
-            # Look up client by phone number (strip leading + or country code variations)
-            phone_variants = [from_no, from_no.lstrip("+"), "+" + from_no.lstrip("+")]
-            client = None
-            for phone in phone_variants:
-                matches = search_clients(phone)
-                if matches:
-                    client = matches[0]
-                    break
-
-            if client:
-                lines = [{
-                    "sku_id":       i["sku_id"],
-                    "sku_code":     i["sku_code"],
-                    "flavour_name": i["flavour_name"],
-                    "format_name":  i["format_name"],
-                    "quantity":     i["qty"],
-                    "unit_price":   i["unit_price"],
-                    "line_discount": 0.0,
-                } for i in cart_items]
-                payment = client.get("default_payment_mode") or "advance"
-                order = create_order(
-                    client_id=client["id"],
-                    payment_mode=payment,
-                    lines=lines,
-                )
-                total = order.get("total", sum(i["qty"] * i["unit_price"] for i in cart_items))
-                reply += (
-                    f"\n\n✅ Order {order.get('order_no','#')} placed for "
-                    f"{client.get('business_name','you')}! "
-                    f"Total: ₹{total:,.0f} ({payment})."
-                )
-            else:
-                reply += "\n\n(To auto-place orders via WhatsApp, ask your admin to add your number to the client list.)"
-        except Exception as e:
-            reply += f"\n\n(Order auto-save failed: {e})"
-
+    reply = _handle_wa_message(from_no, text)
     _wa_send(from_no, reply)
     return "ok", 200
 
