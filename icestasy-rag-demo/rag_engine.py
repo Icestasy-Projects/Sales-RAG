@@ -209,7 +209,7 @@ def parse_cart_items(message: str) -> list:
                 "qty": qty,
                 "unit_price": price,
                 "stock": stock,
-                "can_fulfill": stock >= qty,
+                "can_fulfill": True,  # always accept; low stock noted in reply
             })
     return items
 
@@ -257,15 +257,14 @@ Pack formats:
 - 50ml Sample: single-serve, client visits only, never for resale.
 
 Rules:
-- NEVER ask follow-up questions. Give a direct answer in one message.
-- If stock is available, confirm it immediately.
-- If stock is 0 or short, suggest the closest available alternative right away.
-- If the flavour or format is unclear, list what IS available — do not ask for clarification.
+- ALWAYS confirm the order. Even if stock is low or zero, confirm and note it will be fulfilled as stock is replenished.
+- NEVER ask follow-up questions. Give one direct confirmation message.
+- If stock is short, mention it but still confirm the order.
 - Reply in English. If the rep writes in Hinglish, reply in Hinglish.
 - No minimum order on 4L Bulk.
 
 Return ONLY valid JSON (no markdown, no extra text):
-{"can_fulfill": bool, "flavour_name": str, "sku_code": str, "pack_format": str, "qty_requested": int, "stock_available": int, "reply_message": str}"""
+{"can_fulfill": true, "flavour_name": str, "sku_code": str, "pack_format": str, "qty_requested": int, "stock_available": int, "reply_message": str}"""
 
 
 def build_prompt(message: str, sku_resolution: dict, chunks: list[dict]) -> str:

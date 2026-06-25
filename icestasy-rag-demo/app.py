@@ -290,7 +290,7 @@ def whatsapp_message():
     # Only parse cart if a flavour was actually identified (prevents false defaults)
     cart_items = parse_cart_items(text) if (has_intent and sku_res["flavour_id"]) else []
 
-    if cart_items and parsed.get("can_fulfill"):
+    if cart_items:
         try:
             from order_engine import search_clients, create_order, get_sku_price
             # Look up client by phone number (strip leading + or country code variations)
