@@ -226,6 +226,8 @@ WA_TOKEN    = os.environ.get("WA_TOKEN", "")
 WA_PHONE_ID = os.environ.get("WA_PHONE_ID", "")
 WA_VERIFY   = os.environ.get("WA_VERIFY_TOKEN", "icestasy_verify")
 
+_processed_msg_ids: set = set()  # prevent duplicate order on webhook retries
+
 
 def _wa_send(to: str, text: str):
     if not WA_TOKEN or not WA_PHONE_ID:
@@ -257,6 +259,7 @@ def whatsapp_message():
     try:
         entry   = body["entry"][0]["changes"][0]["value"]
         msg     = entry["messages"][0]
+        msg_id  = msg.get("id", "")
         from_no = msg["from"]
         text    = msg.get("text", {}).get("body", "").strip()
     except (KeyError, IndexError):
@@ -264,6 +267,14 @@ def whatsapp_message():
 
     if not text:
         return "ok", 200
+
+    # Deduplicate — Meta retries the webhook on slow responses
+    if msg_id and msg_id in _processed_msg_ids:
+        return "ok", 200
+    if msg_id:
+        _processed_msg_ids.add(msg_id)
+        if len(_processed_msg_ids) > 500:  # cap memory
+            _processed_msg_ids.clear()
 
     # Run through RAG pipeline synchronously
     sku_res  = resolve_sku(text)
@@ -273,10 +284,11 @@ def whatsapp_message():
     parsed   = result["parsed"]
     reply    = parsed.get("reply_message") or result["raw"][:1000]
 
-    # Auto-create order if LLM says can_fulfill and cart items exist
-    ORDER_KEYWORDS = ("order", "book", "place", "chahiye", "dena", "bhejo", "send", "want", "need")
+    # Auto-create order only when: explicit order intent + specific SKU resolved + LLM confirms
+    ORDER_KEYWORDS = ("order", "book", "place", "chahiye", "dena", "bhejo", "send me", "i want", "i need")
     has_intent = any(kw in text.lower() for kw in ORDER_KEYWORDS)
-    cart_items = parse_cart_items(text) if has_intent else []
+    # Only parse cart if a flavour was actually identified (prevents false defaults)
+    cart_items = parse_cart_items(text) if (has_intent and sku_res["flavour_id"]) else []
 
     if cart_items and parsed.get("can_fulfill"):
         try:

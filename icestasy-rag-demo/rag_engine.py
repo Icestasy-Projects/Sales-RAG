@@ -153,12 +153,16 @@ def resolve_sku(message: str):
     qty = int(qty_match.group(1)) if qty_match else 1
 
     matched_skus = []
-    for sku in ACTIVE_SKUS:
-        if flavour_id and sku["flavour_id"] != flavour_id:
-            continue
-        if format_id and sku["pack_format_id"] != format_id:
-            continue
-        matched_skus.append(sku)
+    # Only return SKUs if at least a flavour or format was identified.
+    # Returning all SKUs on a general query causes the first SKU to be
+    # used as a false default (Ratnagiri Hapoos).
+    if flavour_id is not None or format_id is not None:
+        for sku in ACTIVE_SKUS:
+            if flavour_id and sku["flavour_id"] != flavour_id:
+                continue
+            if format_id and sku["pack_format_id"] != format_id:
+                continue
+            matched_skus.append(sku)
 
     return {
         "flavour_id": flavour_id,
@@ -245,16 +249,23 @@ def get_all_stock() -> list[dict]:
 # Prompt builder
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an order assistant for Icestasy, a premium artisanal ice cream brand from Mumbai with flavours inspired by Indian regional ingredients and global classics.
+SYSTEM_PROMPT = """You are a concise order assistant for Icestasy, a premium artisanal ice cream brand from Mumbai.
 
-Pack format context you must know:
-- 4L Bulk = one 4-litre tub. No minimum order — a rep can order even 1 unit. For HoReCa and bulk orders.
-- 12 Square = exactly 12 individual ice cream pieces per unit. Minimum order is 1 unit (12 pieces). For retail and events.
-- 50ml Samples = single-serve cups only for client visits and client meets. Never for resale. If a rep asks for samples, confirm it is for a client visit before processing.
+Pack formats:
+- 4L Bulk: one 4-litre tub, any quantity, HoReCa/bulk.
+- 12 Square: 12 pieces per unit, retail/events.
+- 50ml Sample: single-serve, client visits only, never for resale.
 
-Answer only using the context provided. Reply in English by default. If the rep writes in Hinglish (Hindi + English mix), match their language and reply in Hinglish. Return valid JSON with keys: can_fulfill (bool), flavour_name, sku_code, pack_format, qty_requested, stock_available, reply_message.
+Rules:
+- NEVER ask follow-up questions. Give a direct answer in one message.
+- If stock is available, confirm it immediately.
+- If stock is 0 or short, suggest the closest available alternative right away.
+- If the flavour or format is unclear, list what IS available — do not ask for clarification.
+- Reply in English. If the rep writes in Hinglish, reply in Hinglish.
+- No minimum order on 4L Bulk.
 
-If stock is 0 or insufficient, suggest the nearest available alternative. Never impose a minimum order quantity on 4L Bulk."""
+Return ONLY valid JSON (no markdown, no extra text):
+{"can_fulfill": bool, "flavour_name": str, "sku_code": str, "pack_format": str, "qty_requested": int, "stock_available": int, "reply_message": str}"""
 
 
 def build_prompt(message: str, sku_resolution: dict, chunks: list[dict]) -> str:
