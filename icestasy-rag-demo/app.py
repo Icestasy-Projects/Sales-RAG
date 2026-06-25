@@ -240,6 +240,7 @@ def _wa_send(to: str, text: str):
 
 
 @app.route("/whatsapp", methods=["GET"])
+@app.route("/webhook", methods=["GET"])
 def whatsapp_verify():
     """Meta webhook verification handshake."""
     if (request.args.get("hub.mode") == "subscribe" and
@@ -249,6 +250,7 @@ def whatsapp_verify():
 
 
 @app.route("/whatsapp", methods=["POST"])
+@app.route("/webhook", methods=["POST"])
 def whatsapp_message():
     """Receive incoming WhatsApp messages and reply via RAG pipeline."""
     body = request.get_json(force=True)
