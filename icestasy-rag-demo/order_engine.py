@@ -149,7 +149,7 @@ def create_order(
         "payment_mode": payment_mode,
         "billing_address_id": billing_address_id,
         "shipping_address_id": shipping_address_id,
-        "status": "pending",
+        "status": "draft",
         "salesperson_id": salesperson_id,
         "placed_by_client": False,
         "source": "rag_demo",
