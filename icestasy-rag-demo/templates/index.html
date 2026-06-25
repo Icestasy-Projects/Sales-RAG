@@ -407,34 +407,51 @@ function appendBotBubble(reply, parsed) {
 }
 
 // ===== CART BUBBLE =====
+let cartBubbleEl = null;
+
 function handleCart(evt) {
   pendingCart = evt;
-  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
   const chat = document.getElementById("chatMessages");
   const div = document.createElement("div");
   div.className = "chat-bubble bot";
-  const rows = (evt.items || []).map(item => {
-    const st = item.can_fulfill
+  cartBubbleEl = div;
+  div.innerHTML = renderCartBubble();
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function renderCartBubble() {
+  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
+  const subtotal = pendingCart.items.reduce((s, i) => s + i.qty * i.unit_price, 0);
+  pendingCart.subtotal = subtotal;
+  const rows = (pendingCart.items || []).map((item, idx) => {
+    const st = item.qty <= item.stock
       ? `<td class="ok">✓ ${item.stock} avail</td>`
       : `<td class="oos">⚠ ${item.stock} only</td>`;
     return `<tr>
       <td>${escHtml(item.flavour_name)}</td>
       <td>${escHtml(item.format_name)}</td>
-      <td><strong>${item.qty}</strong></td>
+      <td>
+        <div class="qty-control">
+          <button class="qty-btn" onclick="updateCartQty(${idx}, -1)">−</button>
+          <span class="qty-val">${item.qty}</span>
+          <button class="qty-btn" onclick="updateCartQty(${idx}, 1)">+</button>
+        </div>
+      </td>
       <td>${fmt(item.unit_price)}</td>
-      <td>${fmt(item.qty * item.unit_price)}</td>
+      <td class="line-total-${idx}">${fmt(item.qty * item.unit_price)}</td>
       ${st}</tr>`;
   }).join("");
-  div.innerHTML = `
+  return `
     <div class="cart-bubble">
-      <div class="cart-title">🛒 Order Cart</div>
+      <div class="cart-title">🛒 Order Cart <span style="font-size:11px;font-weight:400;color:#6b7280">(edit quantities below)</span></div>
       <table class="cart-table">
-        <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Stock</th></tr></thead>
+        <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit</th><th>Total</th><th>Stock</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="cart-total-row">
         <span class="cart-total-label">Subtotal (excl. taxes)</span>
-        <span class="cart-total-amt">${fmt(evt.subtotal)}</span>
+        <span class="cart-total-amt" id="cartSubtotal">${fmt(subtotal)}</span>
       </div>
       <div class="cart-actions">
         <button class="btn-confirm" onclick="openCheckout()">✓ Confirm &amp; Place Order</button>
@@ -442,7 +459,13 @@ function handleCart(evt) {
       </div>
     </div>
     <div class="bubble-time">${now()}</div>`;
-  chat.appendChild(div);
+}
+
+function updateCartQty(idx, delta) {
+  const item = pendingCart.items[idx];
+  item.qty = Math.max(1, item.qty + delta);
+  if (cartBubbleEl) cartBubbleEl.innerHTML = renderCartBubble();
+  const chat = document.getElementById("chatMessages");
   chat.scrollTop = chat.scrollHeight;
 }
 
@@ -451,9 +474,10 @@ function openCheckout() {
   if (!pendingCart) return;
   const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
   document.getElementById("modalCartRows").innerHTML =
-    (pendingCart.items || []).map(i => `
+    (pendingCart.items || []).map((i, idx) => `
       <tr><td>${escHtml(i.flavour_name)}</td><td>${escHtml(i.format_name)}</td>
-      <td>${i.qty}</td><td>${fmt(i.unit_price)}</td><td>${fmt(i.qty * i.unit_price)}</td></tr>`
+      <td><div class="qty-control"><button class="qty-btn" onclick="updateModalQty(${idx},-1)">−</button><span class="qty-val">${i.qty}</span><button class="qty-btn" onclick="updateModalQty(${idx},1)">+</button></div></td>
+      <td>${fmt(i.unit_price)}</td><td id="modal-line-${idx}">${fmt(i.qty * i.unit_price)}</td></tr>`
     ).join("");
   document.getElementById("modalSubtotal").textContent = fmt(pendingCart.subtotal);
   document.getElementById("clientSearchInput").value = "";
@@ -469,6 +493,19 @@ function openCheckout() {
 
 function closeModal() {
   document.getElementById("checkoutModal").classList.remove("open");
+}
+
+function updateModalQty(idx, delta) {
+  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
+  const item = pendingCart.items[idx];
+  item.qty = Math.max(1, item.qty + delta);
+  const row = document.querySelectorAll("#modalCartRows tr")[idx];
+  row.querySelector(".qty-val").textContent = item.qty;
+  document.getElementById(`modal-line-${idx}`).textContent = fmt(item.qty * item.unit_price);
+  const subtotal = pendingCart.items.reduce((s, i) => s + i.qty * i.unit_price, 0);
+  pendingCart.subtotal = subtotal;
+  document.getElementById("modalSubtotal").textContent = fmt(subtotal);
+  if (cartBubbleEl) cartBubbleEl.innerHTML = renderCartBubble();
 }
 document.getElementById("checkoutModal").addEventListener("click", function(e) {
   if (e.target === this) closeModal();
