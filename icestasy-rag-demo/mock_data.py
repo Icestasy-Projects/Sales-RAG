@@ -19,10 +19,12 @@ PACK_FORMATS = [
 ]
 
 SKUS = []
+_sku_idx = 1
 for f in FLAVOURS:
     for p in PACK_FORMATS:
         sku_code = f"{f['abbr']}-{p['suffix']}-{f['id']}"
         SKUS.append({
+            "id": _sku_idx,
             "sku_code": sku_code,
             "flavour_id": f["id"],
             "flavour_name": f["name"],
@@ -32,6 +34,16 @@ for f in FLAVOURS:
             "pack_format_suffix": p["suffix"],
             "is_sample": p["is_sample"],
         })
+        _sku_idx += 1
+
+# Default prices by pack_format_id (used when sku_prices table is empty)
+MOCK_PRICES = {
+    1: 850.0,   # 4L Bulk
+    2: 480.0,   # 12 Square
+    3: 0.0,     # 50ml Sample (complimentary)
+}
+
+PAYMENT_MODES = ["advance", "invoice", "credit"]
 
 INVENTORY = {
     "RAT-4L-1": 18,  "AMR-4L-2": 6,   "PAL-4L-3": 24,

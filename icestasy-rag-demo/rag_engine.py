@@ -5,7 +5,7 @@ import math
 import time
 from collections import Counter
 
-from mock_data import FLAVOURS, PACK_FORMATS, SKUS, INVENTORY, KNOWLEDGE_BASE
+from mock_data import FLAVOURS, PACK_FORMATS, SKUS, INVENTORY, KNOWLEDGE_BASE, MOCK_PRICES
 
 # ---------------------------------------------------------------------------
 # Supabase loader (live data when env vars present)
@@ -22,7 +22,7 @@ def load_skus_from_supabase():
         result = (
             client.schema("production")
             .from_("skus")
-            .select("sku_code, status, flavour_id, pack_format_id, flavours(name), pack_formats(name, is_sample)")
+            .select("id, sku_code, status, flavour_id, pack_format_id, flavours(name), pack_formats(name, is_sample)")
             .execute()
         )
         skus = []
@@ -33,6 +33,7 @@ def load_skus_from_supabase():
             abbr = row["sku_code"].split("-")[0]
             suffix = row["sku_code"].split("-")[1] if len(row["sku_code"].split("-")) > 1 else ""
             skus.append({
+                "id": row["id"],
                 "sku_code": row["sku_code"],
                 "flavour_id": row["flavour_id"],
                 "flavour_name": flavour_name,
@@ -166,6 +167,56 @@ def resolve_sku(message: str):
         "matched_skus": matched_skus,
         "data_source": DATA_SOURCE,
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-item cart parser
+# ---------------------------------------------------------------------------
+
+def parse_cart_items(message: str) -> list:
+    """
+    Parse a message into a list of cart items. Handles multi-item messages like
+    '2 Ratnagiri Mango 4L and 3 Belgian 4L'.
+    Returns [{"sku": {...}, "qty": int, "unit_price": float, "stock": int}, ...]
+    """
+    segments = re.split(r'\band\b|\baur\b|\bor\b|,|\+|\bthen\b', message, flags=re.IGNORECASE)
+    items = []
+    seen_skus = set()
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+        res = resolve_sku(seg)
+        if not res["matched_skus"]:
+            continue
+        qty = res["qty_requested"]
+        for sku in res["matched_skus"]:
+            if sku["sku_code"] in seen_skus:
+                continue
+            seen_skus.add(sku["sku_code"])
+            price = get_sku_price(sku)
+            stock = INVENTORY.get(sku["sku_code"], 0)
+            items.append({
+                "sku_id": sku.get("id", 0),
+                "sku_code": sku["sku_code"],
+                "flavour_name": sku["flavour_name"],
+                "format_name": sku["pack_format_name"],
+                "pack_format_id": sku["pack_format_id"],
+                "qty": qty,
+                "unit_price": price,
+                "stock": stock,
+                "can_fulfill": stock >= qty,
+            })
+    return items
+
+
+def get_sku_price(sku: dict) -> float:
+    """Return unit price for a SKU, checking live sku_prices first then mock."""
+    try:
+        from order_engine import get_sku_price as _live_price
+        return _live_price(sku.get("id", 0), sku["pack_format_id"])
+    except Exception:
+        return MOCK_PRICES.get(sku["pack_format_id"], 0.0)
 
 
 # ---------------------------------------------------------------------------

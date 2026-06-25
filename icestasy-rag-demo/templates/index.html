@@ -155,6 +155,10 @@ function handleEvent(evt) {
     renderInventory(evt.content);
     return;
   }
+  if (evt.step === "cart") {
+    handleCart(evt);
+    return;
+  }
   renderStep(evt);
 }
 
@@ -318,6 +322,256 @@ function escHtml(str) {
 
 function now() {
   return new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+}
+</script>
+
+<!-- ===== CHECKOUT MODAL ===== -->
+<div class="modal-overlay" id="checkoutModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>🛒 Place Order</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-section-title">Order Summary</div>
+        <table class="modal-cart-table">
+          <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+          <tbody id="modalCartRows"></tbody>
+        </table>
+        <div class="modal-total-line">
+          <span>Subtotal:</span><span id="modalSubtotal">₹0</span>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Client</div>
+        <div class="field-group client-search-wrap">
+          <label class="field-label">Search by name, phone, or GST</label>
+          <input class="field-input" id="clientSearchInput" type="text"
+            placeholder="Type to search…" autocomplete="off"
+            oninput="debounceClientSearch(this.value)" />
+          <div class="client-dropdown" id="clientDropdown"></div>
+        </div>
+        <div id="selectedClientInfo" style="display:none;font-size:12px;color:var(--brand);margin-top:-6px;padding:6px 10px;background:var(--brand-lt);border-radius:6px;">
+          <span id="selectedClientText"></span>
+          <a href="#" style="margin-left:10px;color:var(--gray-600);font-size:11px;" onclick="clearClient(event)">change</a>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Payment Mode</div>
+        <div class="payment-radio-group" id="paymentModes">
+          <label id="pm-advance" class="selected" onclick="selectPayment('advance')">
+            <input type="radio" name="pm" value="advance" checked /><span>Advance</span>
+          </label>
+          <label id="pm-invoice" onclick="selectPayment('invoice')">
+            <input type="radio" name="pm" value="invoice" /><span>Invoice</span>
+          </label>
+          <label id="pm-credit" onclick="selectPayment('credit')">
+            <input type="radio" name="pm" value="credit" /><span>Credit</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Shipping Address</div>
+        <div class="field-group">
+          <select class="field-select" id="shippingAddrSelect">
+            <option value="">— Select client first —</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Notes (optional)</div>
+        <textarea class="field-textarea" id="orderNotes" placeholder="Delivery instructions, special requests…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-place-order" id="placeOrderBtn" onclick="placeOrder()">Place Order</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== ORDER FLOW STATE =====
+let pendingCart = null;
+let selectedClient = null;
+let selectedPaymentMode = "advance";
+let clientSearchTimer = null;
+
+// ===== CART BUBBLE =====
+function handleCart(evt) {
+  pendingCart = evt;
+  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
+  const chat = document.getElementById("chatMessages");
+  const div = document.createElement("div");
+  div.className = "chat-bubble bot";
+  const rows = (evt.items || []).map(item => {
+    const st = item.can_fulfill
+      ? `<td class="ok">✓ ${item.stock}</td>`
+      : `<td class="oos">⚠ ${item.stock} only</td>`;
+    return `<tr><td>${escHtml(item.flavour_name)}</td><td>${escHtml(item.format_name)}</td>
+      <td>${item.qty}</td><td>${fmt(item.unit_price)}</td>
+      <td>${fmt(item.qty * item.unit_price)}</td>${st}</tr>`;
+  }).join("");
+  div.innerHTML = `
+    <div class="cart-bubble">
+      <div class="cart-title">🛒 Order Cart</div>
+      <table class="cart-table">
+        <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit</th><th>Total</th><th>Stock</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="cart-total-row">
+        <span class="cart-total-label">Subtotal (excl. taxes)</span>
+        <span class="cart-total-amt">${fmt(evt.subtotal)}</span>
+      </div>
+      <div class="cart-actions">
+        <button class="btn-confirm" onclick="openCheckout()">✓ Confirm &amp; Place Order</button>
+        <button class="btn-cancel" onclick="this.closest('.cart-bubble').remove()">Cancel</button>
+      </div>
+    </div>
+    <div class="bubble-time">${now()}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// ===== CHECKOUT MODAL =====
+function openCheckout() {
+  if (!pendingCart) return;
+  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
+  const tbody = document.getElementById("modalCartRows");
+  tbody.innerHTML = (pendingCart.items || []).map(i => `
+    <tr><td>${escHtml(i.flavour_name)}</td><td>${escHtml(i.format_name)}</td>
+    <td>${i.qty}</td><td>${fmt(i.unit_price)}</td><td>${fmt(i.qty * i.unit_price)}</td></tr>`).join("");
+  document.getElementById("modalSubtotal").textContent = fmt(pendingCart.subtotal);
+  document.getElementById("clientSearchInput").value = "";
+  document.getElementById("clientDropdown").classList.remove("open");
+  document.getElementById("selectedClientInfo").style.display = "none";
+  document.getElementById("shippingAddrSelect").innerHTML = "<option value=''>— Select client first —</option>";
+  document.getElementById("orderNotes").value = "";
+  selectedClient = null;
+  selectPayment("advance");
+  document.getElementById("checkoutModal").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("checkoutModal").classList.remove("open");
+}
+document.getElementById("checkoutModal").addEventListener("click", function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ===== CLIENT SEARCH =====
+function debounceClientSearch(val) {
+  clearTimeout(clientSearchTimer);
+  clientSearchTimer = setTimeout(() => _searchClients(val), 300);
+}
+function _searchClients(q) {
+  if (q.length < 2) { document.getElementById("clientDropdown").classList.remove("open"); return; }
+  fetch(`/api/clients/search?q=${encodeURIComponent(q)}`)
+    .then(r => r.json())
+    .then(data => {
+      const dd = document.getElementById("clientDropdown");
+      const clients = data.clients || [];
+      if (!clients.length) {
+        dd.innerHTML = `<div class="client-option" style="color:var(--gray-400)">No clients found</div>`;
+      } else {
+        dd.innerHTML = clients.map(c => {
+          const cj = escHtml(JSON.stringify(c));
+          return `<div class="client-option" onclick='selectClient(${c.id}, ${JSON.stringify(JSON.stringify(c))})'>
+            <div>${escHtml(c.business_name)}</div>
+            <div class="client-sub">${escHtml(c.primary_contact_phone||"")}${c.gstin?" · "+escHtml(c.gstin):""}</div>
+          </div>`;
+        }).join("");
+      }
+      dd.classList.add("open");
+    }).catch(()=>{});
+}
+function selectClient(id, clientJson) {
+  const c = JSON.parse(clientJson);
+  selectedClient = c;
+  document.getElementById("clientDropdown").classList.remove("open");
+  document.getElementById("clientSearchInput").value = "";
+  document.getElementById("selectedClientText").textContent =
+    c.business_name + (c.primary_contact_phone ? " · " + c.primary_contact_phone : "");
+  document.getElementById("selectedClientInfo").style.display = "block";
+  if (c.default_payment_mode) selectPayment(c.default_payment_mode);
+  fetch(`/api/clients/${id}/addresses`).then(r=>r.json()).then(data=>{
+    const sel = document.getElementById("shippingAddrSelect");
+    const addrs = data.addresses || [];
+    sel.innerHTML = addrs.length
+      ? `<option value="">— Select shipping address —</option>` +
+        addrs.map(a=>`<option value="${a.id}">${escHtml(a.label)}</option>`).join("")
+      : `<option value="">No addresses on file</option>`;
+  });
+}
+function clearClient(e) {
+  e.preventDefault();
+  selectedClient = null;
+  document.getElementById("selectedClientInfo").style.display = "none";
+  document.getElementById("shippingAddrSelect").innerHTML = "<option value=''>— Select client first —</option>";
+}
+
+// ===== PAYMENT MODE =====
+function selectPayment(mode) {
+  selectedPaymentMode = mode;
+  ["advance","invoice","credit"].forEach(m => {
+    const el = document.getElementById("pm-"+m);
+    if (el) el.classList.toggle("selected", m === mode);
+  });
+}
+
+// ===== PLACE ORDER =====
+function placeOrder() {
+  if (!selectedClient) { alert("Please select a client first."); return; }
+  if (!pendingCart || !pendingCart.items.length) return;
+  const shippingId = document.getElementById("shippingAddrSelect").value || null;
+  const notes = document.getElementById("orderNotes").value.trim() || null;
+  const lines = pendingCart.items.map(i => ({
+    sku_id: i.sku_id, sku_code: i.sku_code,
+    flavour_name: i.flavour_name, format_name: i.format_name,
+    quantity: i.qty, unit_price: i.unit_price, line_discount: 0,
+  }));
+  const btn = document.getElementById("placeOrderBtn");
+  btn.disabled = true; btn.textContent = "Placing order…";
+  fetch("/api/orders", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      client_id: selectedClient.id, payment_mode: selectedPaymentMode,
+      billing_address_id: shippingId, shipping_address_id: shippingId,
+      lines, notes,
+    }),
+  }).then(r=>r.json()).then(data=>{
+    btn.disabled = false; btn.textContent = "Place Order";
+    closeModal();
+    if (data.ok) { appendOrderConfirmedBubble(data.order); pendingCart = null; }
+    else alert("Order failed: " + (data.error||"Unknown error"));
+  }).catch(e=>{ btn.disabled=false; btn.textContent="Place Order"; alert("Network error: "+e.message); });
+}
+
+function appendOrderConfirmedBubble(order) {
+  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 2});
+  const chat = document.getElementById("chatMessages");
+  const div = document.createElement("div");
+  div.className = "chat-bubble bot";
+  const lines = (order.lines||[]).map(l=>
+    `${l.quantity} × ${escHtml(l.flavour_name)} ${escHtml(l.format_name)} — ${fmt(l.line_total)}`
+  ).join("<br>");
+  div.innerHTML = `
+    <div class="order-confirmed-bubble">
+      <div class="order-confirmed-title">✅ Order Confirmed!</div>
+      <div class="order-confirmed-no">${escHtml(order.order_no)}</div>
+      <div class="order-confirmed-detail">
+        ${lines}<br>
+        <strong>Subtotal:</strong> ${fmt(order.subtotal)}<br>
+        <strong>Discount:</strong> ${fmt(order.discount)}<br>
+        <strong>Total:</strong> ${fmt(order.total)}<br>
+        <strong>Payment:</strong> ${escHtml(order.payment_mode||"")}
+      </div>
+    </div>
+    <div class="bubble-time">${now()}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
 }
 </script>
 </body>

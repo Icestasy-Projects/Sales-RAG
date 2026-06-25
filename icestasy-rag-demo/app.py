@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, Response, stream_with_context
 
 from rag_engine import (
     resolve_sku, vector_search, get_stock, build_prompt,
-    call_llm, get_all_stock, SYSTEM_PROMPT, DATA_SOURCE,
+    call_llm, get_all_stock, parse_cart_items, SYSTEM_PROMPT, DATA_SOURCE,
 )
 from mock_data import INVENTORY
 
@@ -19,6 +19,54 @@ def sse_event(data: dict) -> str:
 def index():
     return render_template("index.html")
 
+
+# ---------------------------------------------------------------------------
+# Order API endpoints
+# ---------------------------------------------------------------------------
+
+@app.route("/api/clients/search")
+def api_clients_search():
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return {"clients": []}
+    try:
+        from order_engine import search_clients
+        return {"clients": search_clients(q)}
+    except Exception as e:
+        return {"clients": [], "error": str(e)}, 200
+
+
+@app.route("/api/clients/<int:client_id>/addresses")
+def api_client_addresses(client_id):
+    try:
+        from order_engine import get_client_addresses, _addr_label
+        addrs = get_client_addresses(client_id)
+        return {"addresses": [{"id": a["id"], "label": _addr_label(a)} for a in addrs]}
+    except Exception as e:
+        return {"addresses": [], "error": str(e)}, 200
+
+
+@app.route("/api/orders", methods=["POST"])
+def api_create_order():
+    body = request.get_json(force=True)
+    try:
+        from order_engine import create_order
+        order = create_order(
+            client_id=body["client_id"],
+            payment_mode=body["payment_mode"],
+            lines=body["lines"],
+            billing_address_id=body.get("billing_address_id"),
+            shipping_address_id=body.get("shipping_address_id"),
+            notes=body.get("notes"),
+        )
+        return {"ok": True, "order": order}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+
+
+# ---------------------------------------------------------------------------
+# Chat / SSE stream
+# ---------------------------------------------------------------------------
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -131,6 +179,16 @@ def chat():
             "label": "Inventory Summary",
             "content": all_stock,
         })
+
+        # Cart detection — parse multi-item order intent
+        cart_items = parse_cart_items(message)
+        if cart_items:
+            subtotal = sum(i["qty"] * i["unit_price"] for i in cart_items)
+            yield sse_event({
+                "step": "cart",
+                "items": cart_items,
+                "subtotal": subtotal,
+            })
 
         # Final: parsed reply for chat bubble
         yield sse_event({
