@@ -8,5 +8,10 @@ $env:SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdX
 # Paste your free Groq key here — get one at https://console.groq.com
 $env:GROQ_API_KEY         = "your_groq_api_key_here"
 
+# WhatsApp Cloud API — from Meta Developer Console
+$env:WA_TOKEN             = "EAAOBZCkoLkrYBR6krlRbAiORO4eBTw8SVqnWidZCTBCHQHStbmTWZAnjWaNAR0oWWy94X6hz5GZBcei71uSPYvFCXF7kGh27dB0E22v7Ou9qvJV3mS2maUWMYMR9LNAQf9nbrfCIZA5PF9mwTt6LUgNA2YVoDpEOzrqb8i9IPmuhulCHlhDLIZAamhhlTsYbYKU8NZCS8RSuZB4QbMwtIPQW46tjD3MOMg6vQlNMBkm6QyNnp3n2vALyF57JNMjpipw1IQT1vYup6WPHAfnVc8NNxPRrneJtscc0rYPyUAZDZD"
+$env:WA_PHONE_ID          = "1158893220640371"
+$env:WA_VERIFY_TOKEN      = "icestasy_verify"
+
 Write-Host "Starting Icestasy RAG Demo on http://localhost:5000" -ForegroundColor Green
 python app.py

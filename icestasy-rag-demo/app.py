@@ -1,5 +1,7 @@
 import json
+import os
 import time
+import requests
 from flask import Flask, render_template, request, Response, stream_with_context
 
 try:
@@ -214,6 +216,62 @@ def chat():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp Cloud API webhook
+# ---------------------------------------------------------------------------
+
+WA_TOKEN    = os.environ.get("WA_TOKEN", "")
+WA_PHONE_ID = os.environ.get("WA_PHONE_ID", "")
+WA_VERIFY   = os.environ.get("WA_VERIFY_TOKEN", "icestasy_verify")
+
+
+def _wa_send(to: str, text: str):
+    if not WA_TOKEN or not WA_PHONE_ID:
+        return
+    requests.post(
+        f"https://graph.facebook.com/v19.0/{WA_PHONE_ID}/messages",
+        headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+        json={"messaging_product": "whatsapp", "to": to,
+              "type": "text", "text": {"body": text}},
+        timeout=10,
+    )
+
+
+@app.route("/whatsapp", methods=["GET"])
+def whatsapp_verify():
+    """Meta webhook verification handshake."""
+    if (request.args.get("hub.mode") == "subscribe" and
+            request.args.get("hub.verify_token") == WA_VERIFY):
+        return request.args.get("hub.challenge", ""), 200
+    return "Forbidden", 403
+
+
+@app.route("/whatsapp", methods=["POST"])
+def whatsapp_message():
+    """Receive incoming WhatsApp messages and reply via RAG pipeline."""
+    body = request.get_json(force=True)
+    try:
+        entry   = body["entry"][0]["changes"][0]["value"]
+        msg     = entry["messages"][0]
+        from_no = msg["from"]
+        text    = msg.get("text", {}).get("body", "").strip()
+    except (KeyError, IndexError):
+        return "ok", 200  # not a text message event
+
+    if not text:
+        return "ok", 200
+
+    # Run through RAG pipeline synchronously
+    sku_res  = resolve_sku(text)
+    chunks   = vector_search(text, top_k=3)
+    prompt   = build_prompt(text, sku_res, chunks)
+    result   = call_llm(prompt)
+    reply    = result["parsed"].get("reply_message") or result["raw"][:1000]
+
+    _wa_send(from_no, reply)
+    return "ok", 200
 
 
 if __name__ == "__main__":
