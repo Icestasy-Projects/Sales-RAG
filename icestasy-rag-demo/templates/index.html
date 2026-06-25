@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Icestasy · RAG Demo</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<!-- ===== LEFT: CHAT PANEL ===== -->
+<div class="panel chat-panel">
+  <div class="chat-header">
+    <div class="chat-header-avatar">🍦</div>
+    <div>
+      <div class="chat-header-title">Icestasy Order Assistant</div>
+      <div class="chat-header-sub">Sales RAG Demo · Powered by Claude</div>
+    </div>
+  </div>
+
+  <div class="chat-messages" id="chatMessages">
+    <div class="chat-bubble bot">
+      <div class="bubble-text">
+        Namaste! 🙏 Main Icestasy ka order assistant hoon.<br>
+        Koi bhi order query karo — flavour, format, stock, ya delivery!
+      </div>
+      <div class="bubble-time">Now</div>
+    </div>
+  </div>
+
+  <!-- Quick-tap chips -->
+  <div class="quick-taps" id="quickTaps">
+    <div class="quick-label">Quick examples</div>
+    <div class="chips">
+      <button class="chip" onclick="sendQuick(this)">Hapoos mango 4L ka 1 unit chahiye</button>
+      <button class="chip" onclick="sendQuick(this)">Kaaphi ke 12 square 3 units — restaurant client</button>
+      <button class="chip" onclick="sendQuick(this)">Kal client visit hai, Modak aur Speculoos ke samples chahiye</button>
+      <button class="chip" onclick="sendQuick(this)">Coconut ka koi bhi format de do, 20 units</button>
+      <button class="chip" onclick="sendQuick(this)">Mysore Paak 4L mein hai kya, 10 chahiye</button>
+      <button class="chip" onclick="sendQuick(this)">Sabse zyada stock kisme hai abhi</button>
+    </div>
+  </div>
+
+  <div class="chat-input-row">
+    <input
+      id="msgInput"
+      type="text"
+      placeholder="Order query likho… (Hinglish OK)"
+      onkeydown="if(event.key==='Enter') sendMessage()"
+    />
+    <button onclick="sendMessage()" id="sendBtn">Send</button>
+  </div>
+</div>
+
+<!-- ===== RIGHT: PIPELINE PANEL ===== -->
+<div class="panel pipeline-panel">
+  <div class="pipeline-header">
+    <span class="pipeline-title">RAG Pipeline</span>
+    <span class="pipeline-sub" id="pipelineSub">Waiting for query…</span>
+  </div>
+
+  <div class="pipeline-steps" id="pipelineSteps">
+    <div class="pipeline-empty">
+      Send a message to see the RAG pipeline in action.
+    </div>
+  </div>
+
+  <div class="inventory-bar" id="inventoryBar" style="display:none">
+    <div class="inv-title">Live Inventory Snapshot</div>
+    <div class="inv-grid" id="invGrid"></div>
+  </div>
+</div>
+
+<script>
+const STEP_META = {
+  1: { icon: "📨", label: "Message Received",  color: "gray"   },
+  2: { icon: "🔍", label: "SKU Resolution",    color: "teal"   },
+  3: { icon: "🧠", label: "Vector Search",     color: "purple" },
+  4: { icon: "📦", label: "Stock Lookup",      color: "teal"   },
+  5: { icon: "📝", label: "Prompt Assembly",   color: "amber"  },
+  6: { icon: "✨", label: "LLM Response",      color: "green"  },
+};
+
+let currentES = null;
+
+function sendQuick(btn) {
+  document.getElementById("msgInput").value = btn.textContent;
+  sendMessage();
+}
+
+function sendMessage() {
+  const input = document.getElementById("msgInput");
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = "";
+
+  appendUserBubble(msg);
+  resetPipeline();
+
+  if (currentES) { currentES.close(); currentES = null; }
+
+  document.getElementById("sendBtn").disabled = true;
+  document.getElementById("pipelineSub").textContent = "Processing…";
+
+  fetch("/chat", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({message: msg}),
+  }).then(res => {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    function read() {
+      reader.read().then(({done, value}) => {
+        if (done) {
+          document.getElementById("sendBtn").disabled = false;
+          document.getElementById("pipelineSub").textContent = "Done";
+          return;
+        }
+        buf += decoder.decode(value, {stream: true});
+        const parts = buf.split("\n\n");
+        buf = parts.pop();
+        for (const part of parts) {
+          if (part.startsWith("data: ")) {
+            try {
+              const evt = JSON.parse(part.slice(6));
+              handleEvent(evt);
+            } catch(e) {}
+          }
+        }
+        read();
+      });
+    }
+    read();
+  }).catch(e => {
+    document.getElementById("sendBtn").disabled = false;
+    document.getElementById("pipelineSub").textContent = "Error";
+    console.error(e);
+  });
+}
+
+function resetPipeline() {
+  document.getElementById("pipelineSteps").innerHTML = "";
+  document.getElementById("inventoryBar").style.display = "none";
+}
+
+function handleEvent(evt) {
+  if (evt.step === "done") {
+    appendBotBubble(evt.reply, evt.parsed);
+    document.getElementById("sendBtn").disabled = false;
+    return;
+  }
+  if (evt.step === "inventory") {
+    renderInventory(evt.content);
+    return;
+  }
+  renderStep(evt);
+}
+
+function renderStep(evt) {
+  const meta = STEP_META[evt.step] || {};
+  const container = document.getElementById("pipelineSteps");
+
+  const card = document.createElement("div");
+  card.className = `step-card step-${evt.color || "gray"} step-entering`;
+
+  const header = document.createElement("div");
+  header.className = "step-header";
+  header.innerHTML = `
+    <span class="step-icon">${meta.icon || "⚙️"}</span>
+    <span class="step-label">Step ${evt.step} — ${evt.label}</span>
+    <span class="step-toggle">▾</span>
+  `;
+
+  const body = document.createElement("div");
+  body.className = "step-body";
+  body.innerHTML = formatContent(evt.step, evt.content);
+
+  header.onclick = () => {
+    card.classList.toggle("collapsed");
+    header.querySelector(".step-toggle").textContent =
+      card.classList.contains("collapsed") ? "▸" : "▾";
+  };
+
+  card.appendChild(header);
+  card.appendChild(body);
+  container.appendChild(card);
+  card.scrollIntoView({behavior: "smooth", block: "nearest"});
+
+  setTimeout(() => card.classList.remove("step-entering"), 50);
+}
+
+function formatContent(step, content) {
+  if (step === 1) {
+    return `<div class="step-raw">"${escHtml(content)}"</div>`;
+  }
+  if (step === 2) {
+    const skus = (content.matched_skus || []).map(s =>
+      `<tr><td><code>${s.sku_code}</code></td><td>${escHtml(s.flavour)}</td>
+       <td>${escHtml(s.format)}</td>
+       <td class="${s.stock === 0 ? 'stock-zero' : 'stock-ok'}">${s.stock} units</td></tr>`
+    ).join("") || "<tr><td colspan='4'>No SKU resolved</td></tr>";
+    return `
+      <div class="kv-row"><span>Flavour ID</span><code>${content.flavour_id ?? "—"}</code></div>
+      <div class="kv-row"><span>Format ID</span><code>${content.format_id ?? "—"}</code></div>
+      <div class="kv-row"><span>Qty</span><code>${content.qty_requested}</code></div>
+      <div class="kv-row"><span>Source</span><code>${escHtml(content.data_source)}</code></div>
+      <table class="sku-table">
+        <thead><tr><th>SKU</th><th>Flavour</th><th>Format</th><th>Stock</th></tr></thead>
+        <tbody>${skus}</tbody>
+      </table>`;
+  }
+  if (step === 3) {
+    const rows = (content.results || []).map((r, i) =>
+      `<div class="chunk-row">
+         <div class="chunk-meta"><span class="chunk-rank">#${i+1}</span>
+           <span class="chunk-score">score: ${r.score}</span></div>
+         <div class="chunk-text">${escHtml(r.text)}</div>
+       </div>`
+    ).join("");
+    return `<div class="chunk-list">${rows}</div>`;
+  }
+  if (step === 4) {
+    return (content.lookups || []).map(l =>
+      `<div class="sql-block"><code class="sql">${escHtml(l.sql)}</code>
+       <div class="sql-result">→ <strong>${l.result}</strong> units</div></div>`
+    ).join("");
+  }
+  if (step === 5) {
+    return `
+      <details class="prompt-details">
+        <summary>System Prompt</summary>
+        <pre class="prompt-pre">${escHtml(content.system_prompt)}</pre>
+      </details>
+      <details class="prompt-details" open>
+        <summary>User Prompt (with context)</summary>
+        <pre class="prompt-pre">${escHtml(content.user_prompt)}</pre>
+      </details>`;
+  }
+  if (step === 6) {
+    return `
+      <details class="prompt-details" open>
+        <summary>Raw JSON from Claude</summary>
+        <pre class="prompt-pre">${escHtml(content.raw)}</pre>
+      </details>`;
+  }
+  return `<pre class="prompt-pre">${escHtml(JSON.stringify(content, null, 2))}</pre>`;
+}
+
+function renderInventory(rows) {
+  const bar = document.getElementById("inventoryBar");
+  const grid = document.getElementById("invGrid");
+  bar.style.display = "";
+  grid.innerHTML = "";
+
+  // Group by format
+  const byFormat = {};
+  for (const r of rows) {
+    if (r.is_sample) continue;
+    const f = r.pack_format_name;
+    if (!byFormat[f]) byFormat[f] = [];
+    byFormat[f].push(r);
+  }
+
+  for (const [fmt, items] of Object.entries(byFormat)) {
+    const section = document.createElement("div");
+    section.className = "inv-section";
+    section.innerHTML = `<div class="inv-format-label">${escHtml(fmt)}</div>`;
+    for (const item of items) {
+      const pct = Math.min(100, (item.stock / 50) * 100);
+      const cls = item.stock === 0 ? "bar-zero" : item.stock < 5 ? "bar-low" : "bar-ok";
+      section.innerHTML += `
+        <div class="inv-item">
+          <div class="inv-item-name">${escHtml(item.flavour_name)}</div>
+          <div class="inv-bar-wrap">
+            <div class="inv-bar ${cls}" style="width:${pct}%"></div>
+          </div>
+          <div class="inv-item-qty">${item.stock}</div>
+        </div>`;
+    }
+    grid.appendChild(section);
+  }
+
+  bar.scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+function appendUserBubble(msg) {
+  const chat = document.getElementById("chatMessages");
+  const div = document.createElement("div");
+  div.className = "chat-bubble user";
+  div.innerHTML = `<div class="bubble-text">${escHtml(msg)}</div>
+                   <div class="bubble-time">${now()}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function appendBotBubble(reply, parsed) {
+  const chat = document.getElementById("chatMessages");
+  const div = document.createElement("div");
+  div.className = "chat-bubble bot";
+  const canFulfill = parsed && parsed.can_fulfill;
+  const badge = parsed && parsed.sku_code
+    ? `<span class="sku-badge ${canFulfill ? 'badge-green' : 'badge-red'}">${parsed.sku_code}</span>`
+    : "";
+  div.innerHTML = `
+    <div class="bubble-text">${badge}${escHtml(reply || "…")}</div>
+    <div class="bubble-time">${now()}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escHtml(str) {
+  if (typeof str !== "string") str = JSON.stringify(str) || "";
+  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+            .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+function now() {
+  return new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+}
+</script>
+</body>
+</html>
