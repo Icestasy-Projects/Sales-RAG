@@ -152,7 +152,7 @@ def create_order(
         "status": "draft",
         "salesperson_id": salesperson_id,
         "placed_by_client": False,
-        "source": "rag_demo",
+        "source": "whatsapp_ai",
         "is_urgent": False,
         "subtotal_amount": str(subtotal),
         "discount_amount": str(discount),
