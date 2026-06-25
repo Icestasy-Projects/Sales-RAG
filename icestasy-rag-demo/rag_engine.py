@@ -5,7 +5,7 @@ import math
 import time
 from collections import Counter
 
-from mock_data import FLAVOURS, PACK_FORMATS, SKUS, INVENTORY, KNOWLEDGE_BASE
+from mock_data import FLAVOURS, PACK_FORMATS, SKUS, INVENTORY, KNOWLEDGE_BASE, MOCK_PRICES
 
 # ---------------------------------------------------------------------------
 # Supabase loader (live data when env vars present)
@@ -22,7 +22,7 @@ def load_skus_from_supabase():
         result = (
             client.schema("production")
             .from_("skus")
-            .select("sku_code, status, flavour_id, pack_format_id, flavours(name), pack_formats(name, is_sample)")
+            .select("id, sku_code, status, flavour_id, pack_format_id, flavours(name), pack_formats(name, is_sample)")
             .execute()
         )
         skus = []
@@ -33,6 +33,7 @@ def load_skus_from_supabase():
             abbr = row["sku_code"].split("-")[0]
             suffix = row["sku_code"].split("-")[1] if len(row["sku_code"].split("-")) > 1 else ""
             skus.append({
+                "id": row["id"],
                 "sku_code": row["sku_code"],
                 "flavour_id": row["flavour_id"],
                 "flavour_name": flavour_name,
@@ -152,12 +153,16 @@ def resolve_sku(message: str):
     qty = int(qty_match.group(1)) if qty_match else 1
 
     matched_skus = []
-    for sku in ACTIVE_SKUS:
-        if flavour_id and sku["flavour_id"] != flavour_id:
-            continue
-        if format_id and sku["pack_format_id"] != format_id:
-            continue
-        matched_skus.append(sku)
+    # Only return SKUs if at least a flavour or format was identified.
+    # Returning all SKUs on a general query causes the first SKU to be
+    # used as a false default (Ratnagiri Hapoos).
+    if flavour_id is not None or format_id is not None:
+        for sku in ACTIVE_SKUS:
+            if flavour_id and sku["flavour_id"] != flavour_id:
+                continue
+            if format_id and sku["pack_format_id"] != format_id:
+                continue
+            matched_skus.append(sku)
 
     return {
         "flavour_id": flavour_id,
@@ -166,6 +171,56 @@ def resolve_sku(message: str):
         "matched_skus": matched_skus,
         "data_source": DATA_SOURCE,
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-item cart parser
+# ---------------------------------------------------------------------------
+
+def parse_cart_items(message: str) -> list:
+    """
+    Parse a message into a list of cart items. Handles multi-item messages like
+    '2 Ratnagiri Mango 4L and 3 Belgian 4L'.
+    Returns [{"sku": {...}, "qty": int, "unit_price": float, "stock": int}, ...]
+    """
+    segments = re.split(r'\band\b|\baur\b|\bor\b|,|\+|\bthen\b', message, flags=re.IGNORECASE)
+    items = []
+    seen_skus = set()
+    for seg in segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+        res = resolve_sku(seg)
+        if not res["matched_skus"]:
+            continue
+        qty = res["qty_requested"]
+        for sku in res["matched_skus"]:
+            if sku["sku_code"] in seen_skus:
+                continue
+            seen_skus.add(sku["sku_code"])
+            price = get_sku_price(sku)
+            stock = INVENTORY.get(sku["sku_code"], 0)
+            items.append({
+                "sku_id": sku.get("id", 0),
+                "sku_code": sku["sku_code"],
+                "flavour_name": sku["flavour_name"],
+                "format_name": sku["pack_format_name"],
+                "pack_format_id": sku["pack_format_id"],
+                "qty": qty,
+                "unit_price": price,
+                "stock": stock,
+                "can_fulfill": True,  # always accept; low stock noted in reply
+            })
+    return items
+
+
+def get_sku_price(sku: dict) -> float:
+    """Return unit price for a SKU, checking live sku_prices first then mock."""
+    try:
+        from order_engine import get_sku_price as _live_price
+        return _live_price(sku.get("id", 0), sku["pack_format_id"])
+    except Exception:
+        return MOCK_PRICES.get(sku["pack_format_id"], 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -194,16 +249,22 @@ def get_all_stock() -> list[dict]:
 # Prompt builder
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an order assistant for Icestasy, a premium artisanal ice cream brand from Mumbai with flavours inspired by Indian regional ingredients and global classics.
+SYSTEM_PROMPT = """You are a concise order assistant for Icestasy, a premium artisanal ice cream brand from Mumbai.
 
-Pack format context you must know:
-- 4L Bulk = one 4-litre tub. No minimum order — a rep can order even 1 unit. For HoReCa and bulk orders.
-- 12 Square = exactly 12 individual ice cream pieces per unit. Minimum order is 1 unit (12 pieces). For retail and events.
-- 50ml Samples = single-serve cups only for client visits and client meets. Never for resale. If a rep asks for samples, confirm it is for a client visit before processing.
+Pack formats:
+- 4L Bulk: one 4-litre tub, any quantity, HoReCa/bulk.
+- 12 Square: 12 pieces per unit, retail/events.
+- 50ml Sample: single-serve, client visits only, never for resale.
 
-Answer only using the context provided. Reply in the same language as the rep — Hinglish is preferred and natural. Return valid JSON with keys: can_fulfill (bool), flavour_name, sku_code, pack_format, qty_requested, stock_available, reply_message.
+Rules:
+- ALWAYS confirm the order. Never say out of stock, never mention replenishment, never suggest alternatives unless asked.
+- NEVER ask follow-up questions. One direct confirmation only.
+- Reply in English. If the rep writes in Hinglish, reply in Hinglish.
+- No minimum order on 4L Bulk.
+- reply_message must be a short confirmation like "Got it! 2 × Ratnagiri Mango 4L confirmed."
 
-If stock is 0 or insufficient, suggest the nearest available alternative. Never impose a minimum order quantity on 4L Bulk."""
+Return ONLY valid JSON (no markdown, no extra text):
+{"can_fulfill": true, "flavour_name": str, "sku_code": str, "pack_format": str, "qty_requested": int, "stock_available": int, "reply_message": str}"""
 
 
 def build_prompt(message: str, sku_resolution: dict, chunks: list[dict]) -> str:
@@ -239,15 +300,57 @@ MOCK_RESPONSE = {
     "pack_format": "4L Bulk",
     "qty_requested": 1,
     "stock_available": 10,
-    "reply_message": "Demo mode: ANTHROPIC_API_KEY not set. Yeh ek mock response hai! ✨",
+    "reply_message": "Demo mode: no API key set. Yeh ek mock response hai! ✨",
 }
 
 
-def call_llm(user_prompt: str) -> dict:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return {"raw": json.dumps(MOCK_RESPONSE, ensure_ascii=False), "parsed": MOCK_RESPONSE}
+def _parse_llm_raw(raw: str) -> dict:
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    json_str = json_match.group(1) if json_match else raw
+    return json.loads(json_str)
 
+
+def _empty_parse(raw: str) -> dict:
+    return {"reply_message": raw, "can_fulfill": False,
+            "flavour_name": "", "sku_code": "", "pack_format": "",
+            "qty_requested": 0, "stock_available": 0}
+
+
+def call_llm(user_prompt: str) -> dict:
+    groq_key = os.environ.get("GROQ_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    if groq_key:
+        return _call_groq(user_prompt, groq_key)
+    if anthropic_key:
+        return _call_anthropic(user_prompt, anthropic_key)
+    return {"raw": json.dumps(MOCK_RESPONSE, ensure_ascii=False), "parsed": MOCK_RESPONSE}
+
+
+def _call_groq(user_prompt: str, api_key: str) -> dict:
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key)
+        msg = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=512,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        raw = msg.choices[0].message.content.strip()
+        try:
+            parsed = _parse_llm_raw(raw)
+        except json.JSONDecodeError:
+            parsed = _empty_parse(raw)
+        return {"raw": raw, "parsed": parsed}
+    except Exception as e:
+        err = _empty_parse(f"Groq error: {e}")
+        return {"raw": str(e), "parsed": err}
+
+
+def _call_anthropic(user_prompt: str, api_key: str) -> dict:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
@@ -258,17 +361,11 @@ def call_llm(user_prompt: str) -> dict:
             messages=[{"role": "user", "content": user_prompt}],
         )
         raw = msg.content[0].text.strip()
-        # extract JSON if wrapped in markdown code block
-        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-        json_str = json_match.group(1) if json_match else raw
-        parsed = json.loads(json_str)
+        try:
+            parsed = _parse_llm_raw(raw)
+        except json.JSONDecodeError:
+            parsed = _empty_parse(raw)
         return {"raw": raw, "parsed": parsed}
-    except json.JSONDecodeError:
-        return {"raw": raw, "parsed": {"reply_message": raw, "can_fulfill": False,
-                                        "flavour_name": "", "sku_code": "", "pack_format": "",
-                                        "qty_requested": 0, "stock_available": 0}}
     except Exception as e:
-        err = {"reply_message": f"LLM error: {e}", "can_fulfill": False,
-               "flavour_name": "", "sku_code": "", "pack_format": "",
-               "qty_requested": 0, "stock_available": 0}
+        err = _empty_parse(f"LLM error: {e}")
         return {"raw": str(e), "parsed": err}
