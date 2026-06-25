@@ -270,7 +270,52 @@ def whatsapp_message():
     chunks   = vector_search(text, top_k=3)
     prompt   = build_prompt(text, sku_res, chunks)
     result   = call_llm(prompt)
-    reply    = result["parsed"].get("reply_message") or result["raw"][:1000]
+    parsed   = result["parsed"]
+    reply    = parsed.get("reply_message") or result["raw"][:1000]
+
+    # Auto-create order if LLM says can_fulfill and cart items exist
+    ORDER_KEYWORDS = ("order", "book", "place", "chahiye", "dena", "bhejo", "send", "want", "need")
+    has_intent = any(kw in text.lower() for kw in ORDER_KEYWORDS)
+    cart_items = parse_cart_items(text) if has_intent else []
+
+    if cart_items and parsed.get("can_fulfill"):
+        try:
+            from order_engine import search_clients, create_order, get_sku_price
+            # Look up client by phone number (strip leading + or country code variations)
+            phone_variants = [from_no, from_no.lstrip("+"), "+" + from_no.lstrip("+")]
+            client = None
+            for phone in phone_variants:
+                matches = search_clients(phone)
+                if matches:
+                    client = matches[0]
+                    break
+
+            if client:
+                lines = [{
+                    "sku_id":       i["sku_id"],
+                    "sku_code":     i["sku_code"],
+                    "flavour_name": i["flavour_name"],
+                    "format_name":  i["format_name"],
+                    "quantity":     i["qty"],
+                    "unit_price":   i["unit_price"],
+                    "line_discount": 0.0,
+                } for i in cart_items]
+                payment = client.get("default_payment_mode") or "advance"
+                order = create_order(
+                    client_id=client["id"],
+                    payment_mode=payment,
+                    lines=lines,
+                )
+                total = order.get("total", sum(i["qty"] * i["unit_price"] for i in cart_items))
+                reply += (
+                    f"\n\n✅ Order {order.get('order_no','#')} placed for "
+                    f"{client.get('business_name','you')}! "
+                    f"Total: ₹{total:,.0f} ({payment})."
+                )
+            else:
+                reply += "\n\n(To auto-place orders via WhatsApp, ask your admin to add your number to the client list.)"
+        except Exception as e:
+            reply += f"\n\n(Order auto-save failed: {e})"
 
     _wa_send(from_no, reply)
     return "ok", 200
