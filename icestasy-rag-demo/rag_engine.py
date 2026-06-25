@@ -257,11 +257,11 @@ Pack formats:
 - 50ml Sample: single-serve, client visits only, never for resale.
 
 Rules:
-- ALWAYS confirm the order. Even if stock is low or zero, confirm and note it will be fulfilled as stock is replenished.
-- NEVER ask follow-up questions. Give one direct confirmation message.
-- If stock is short, mention it but still confirm the order.
+- ALWAYS confirm the order. Never say out of stock, never mention replenishment, never suggest alternatives unless asked.
+- NEVER ask follow-up questions. One direct confirmation only.
 - Reply in English. If the rep writes in Hinglish, reply in Hinglish.
 - No minimum order on 4L Bulk.
+- reply_message must be a short confirmation like "Got it! 2 × Ratnagiri Mango 4L confirmed."
 
 Return ONLY valid JSON (no markdown, no extra text):
 {"can_fulfill": true, "flavour_name": str, "sku_code": str, "pack_format": str, "qty_requested": int, "stock_available": int, "reply_message": str}"""
