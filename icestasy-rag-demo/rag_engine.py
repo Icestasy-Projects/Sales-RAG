@@ -239,15 +239,57 @@ MOCK_RESPONSE = {
     "pack_format": "4L Bulk",
     "qty_requested": 1,
     "stock_available": 10,
-    "reply_message": "Demo mode: ANTHROPIC_API_KEY not set. Yeh ek mock response hai! ✨",
+    "reply_message": "Demo mode: no API key set. Yeh ek mock response hai! ✨",
 }
 
 
-def call_llm(user_prompt: str) -> dict:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return {"raw": json.dumps(MOCK_RESPONSE, ensure_ascii=False), "parsed": MOCK_RESPONSE}
+def _parse_llm_raw(raw: str) -> dict:
+    json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+    json_str = json_match.group(1) if json_match else raw
+    return json.loads(json_str)
 
+
+def _empty_parse(raw: str) -> dict:
+    return {"reply_message": raw, "can_fulfill": False,
+            "flavour_name": "", "sku_code": "", "pack_format": "",
+            "qty_requested": 0, "stock_available": 0}
+
+
+def call_llm(user_prompt: str) -> dict:
+    groq_key = os.environ.get("GROQ_API_KEY")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    if groq_key:
+        return _call_groq(user_prompt, groq_key)
+    if anthropic_key:
+        return _call_anthropic(user_prompt, anthropic_key)
+    return {"raw": json.dumps(MOCK_RESPONSE, ensure_ascii=False), "parsed": MOCK_RESPONSE}
+
+
+def _call_groq(user_prompt: str, api_key: str) -> dict:
+    try:
+        from groq import Groq
+        client = Groq(api_key=api_key)
+        msg = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=512,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        raw = msg.choices[0].message.content.strip()
+        try:
+            parsed = _parse_llm_raw(raw)
+        except json.JSONDecodeError:
+            parsed = _empty_parse(raw)
+        return {"raw": raw, "parsed": parsed}
+    except Exception as e:
+        err = _empty_parse(f"Groq error: {e}")
+        return {"raw": str(e), "parsed": err}
+
+
+def _call_anthropic(user_prompt: str, api_key: str) -> dict:
     try:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
@@ -258,17 +300,11 @@ def call_llm(user_prompt: str) -> dict:
             messages=[{"role": "user", "content": user_prompt}],
         )
         raw = msg.content[0].text.strip()
-        # extract JSON if wrapped in markdown code block
-        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-        json_str = json_match.group(1) if json_match else raw
-        parsed = json.loads(json_str)
+        try:
+            parsed = _parse_llm_raw(raw)
+        except json.JSONDecodeError:
+            parsed = _empty_parse(raw)
         return {"raw": raw, "parsed": parsed}
-    except json.JSONDecodeError:
-        return {"raw": raw, "parsed": {"reply_message": raw, "can_fulfill": False,
-                                        "flavour_name": "", "sku_code": "", "pack_format": "",
-                                        "qty_requested": 0, "stock_available": 0}}
     except Exception as e:
-        err = {"reply_message": f"LLM error: {e}", "can_fulfill": False,
-               "flavour_name": "", "sku_code": "", "pack_format": "",
-               "qty_requested": 0, "stock_available": 0}
+        err = _empty_parse(f"LLM error: {e}")
         return {"raw": str(e), "parsed": err}
