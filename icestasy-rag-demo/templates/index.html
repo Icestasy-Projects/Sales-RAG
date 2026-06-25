@@ -3,75 +3,160 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Icestasy · RAG Demo</title>
+  <title>Icestasy · Order Assistant</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+<div id="app">
 
-<!-- ===== LEFT: CHAT PANEL ===== -->
-<div class="panel chat-panel">
-  <div class="chat-header">
-    <div class="chat-header-avatar">🍦</div>
-    <div>
-      <div class="chat-header-title">Icestasy Order Assistant</div>
-      <div class="chat-header-sub">Sales RAG Demo · Powered by Claude</div>
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="header-brand-name">🍦 Icestasy Order Assistant</div>
+      <div class="header-brand-sub">Sales RAG Demo · Powered by Claude</div>
     </div>
-  </div>
+    <div class="header-divider"></div>
+    <nav class="header-tabs">
+      <button class="tab-btn active" onclick="switchTab('chat')" id="tabBtnChat">
+        💬 Chat
+      </button>
+      <button class="tab-btn" onclick="switchTab('pipeline')" id="tabBtnPipeline">
+        ⚙️ Pipeline <span class="tab-badge" id="pipelineBadge"></span>
+      </button>
+    </nav>
+    <div class="header-spacer"></div>
+    <div class="header-status" id="headerStatus">Ready</div>
+  </header>
 
-  <div class="chat-messages" id="chatMessages">
-    <div class="chat-bubble bot">
-      <div class="bubble-text">
-        Namaste! 🙏 Main Icestasy ka order assistant hoon.<br>
-        Koi bhi order query karo — flavour, format, stock, ya delivery!
+  <!-- ===== CHAT TAB ===== -->
+  <div id="tab-chat" class="tab-content active">
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-bubble bot">
+          <div class="bubble-text">
+            Welcome to Icestasy Order Assistant. How can I help you today?<br><br>
+            You can ask about stock, place orders, or check flavour availability. Hinglish is supported too!
+          </div>
+          <div class="bubble-time">Now</div>
+        </div>
       </div>
-      <div class="bubble-time">Now</div>
+
+      <div class="quick-taps" id="quickTaps">
+        <div class="quick-label">Quick Examples</div>
+        <div class="chips">
+          <button class="chip" onclick="sendQuick(this)">Hapoos mango 4L ka 1 unit chahiye</button>
+          <button class="chip" onclick="sendQuick(this)">2 Ratnagiri Mango 4L and 3 Belgian 4L</button>
+          <button class="chip" onclick="sendQuick(this)">Kaaphi ke 12 square 3 units — restaurant client</button>
+          <button class="chip" onclick="sendQuick(this)">Kal client visit hai, Modak aur Speculoos ke samples chahiye</button>
+          <button class="chip" onclick="sendQuick(this)">Mysore Paak 4L mein hai kya, 10 chahiye</button>
+          <button class="chip" onclick="sendQuick(this)">Sabse zyada stock kisme hai abhi</button>
+        </div>
+      </div>
+
+      <div class="chat-input-row">
+        <input
+          id="msgInput"
+          type="text"
+          placeholder="Ask about stock, place an order… (Hinglish OK)"
+          onkeydown="if(event.key==='Enter') sendMessage()"
+        />
+        <button onclick="sendMessage()" id="sendBtn">Send</button>
+      </div>
     </div>
   </div>
 
-  <!-- Quick-tap chips -->
-  <div class="quick-taps" id="quickTaps">
-    <div class="quick-label">Quick examples</div>
-    <div class="chips">
-      <button class="chip" onclick="sendQuick(this)">Hapoos mango 4L ka 1 unit chahiye</button>
-      <button class="chip" onclick="sendQuick(this)">Kaaphi ke 12 square 3 units — restaurant client</button>
-      <button class="chip" onclick="sendQuick(this)">Kal client visit hai, Modak aur Speculoos ke samples chahiye</button>
-      <button class="chip" onclick="sendQuick(this)">Coconut ka koi bhi format de do, 20 units</button>
-      <button class="chip" onclick="sendQuick(this)">Mysore Paak 4L mein hai kya, 10 chahiye</button>
-      <button class="chip" onclick="sendQuick(this)">Sabse zyada stock kisme hai abhi</button>
+  <!-- ===== PIPELINE TAB ===== -->
+  <div id="tab-pipeline" class="tab-content">
+    <div class="pipeline-container">
+      <div class="pipeline-topbar">
+        <span class="pipeline-topbar-title">RAG Pipeline</span>
+        <span class="pipeline-topbar-sub" id="pipelineSub">Waiting for query…</span>
+      </div>
+      <div class="pipeline-body" id="pipelineSteps">
+        <div class="pipeline-empty">
+          <div class="pipeline-empty-icon">⚙️</div>
+          <div class="pipeline-empty-text">Send a message to see the pipeline in action.</div>
+        </div>
+      </div>
+      <div class="inventory-section" id="inventoryBar" style="display:none">
+        <div class="inv-title">Live Inventory Snapshot</div>
+        <div class="inv-grid" id="invGrid"></div>
+      </div>
     </div>
   </div>
 
-  <div class="chat-input-row">
-    <input
-      id="msgInput"
-      type="text"
-      placeholder="Order query likho… (Hinglish OK)"
-      onkeydown="if(event.key==='Enter') sendMessage()"
-    />
-    <button onclick="sendMessage()" id="sendBtn">Send</button>
-  </div>
-</div>
+</div><!-- #app -->
 
-<!-- ===== RIGHT: PIPELINE PANEL ===== -->
-<div class="panel pipeline-panel">
-  <div class="pipeline-header">
-    <span class="pipeline-title">RAG Pipeline</span>
-    <span class="pipeline-sub" id="pipelineSub">Waiting for query…</span>
-  </div>
-
-  <div class="pipeline-steps" id="pipelineSteps">
-    <div class="pipeline-empty">
-      Send a message to see the RAG pipeline in action.
+<!-- ===== CHECKOUT MODAL ===== -->
+<div class="modal-overlay" id="checkoutModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>🛒 Place Order</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-  </div>
-
-  <div class="inventory-bar" id="inventoryBar" style="display:none">
-    <div class="inv-title">Live Inventory Snapshot</div>
-    <div class="inv-grid" id="invGrid"></div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-section-title">Order Summary</div>
+        <table class="modal-cart-table">
+          <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
+          <tbody id="modalCartRows"></tbody>
+        </table>
+        <div class="modal-total-line">
+          <span>Subtotal</span><span id="modalSubtotal">₹0</span>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Client</div>
+        <div class="field-group client-search-wrap" id="clientSearchWrap">
+          <label class="field-label">Search by name, phone, or GST number</label>
+          <input class="field-input" id="clientSearchInput" type="text"
+            placeholder="Start typing to search…" autocomplete="off"
+            oninput="debounceClientSearch(this.value)" />
+          <div class="client-dropdown" id="clientDropdown"></div>
+        </div>
+        <div id="selectedClientInfo" style="display:none">
+          <div class="client-selected-pill">
+            <span id="selectedClientText"></span>
+            <a href="#" onclick="clearClient(event)">change</a>
+          </div>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Payment Mode</div>
+        <div class="payment-radio-group">
+          <label id="pm-advance" class="selected" onclick="selectPayment('advance')">
+            <input type="radio" name="pm" value="advance" checked /><span>Advance</span>
+          </label>
+          <label id="pm-invoice" onclick="selectPayment('invoice')">
+            <input type="radio" name="pm" value="invoice" /><span>Invoice</span>
+          </label>
+          <label id="pm-credit" onclick="selectPayment('credit')">
+            <input type="radio" name="pm" value="credit" /><span>Credit</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Shipping Address</div>
+        <div class="field-group">
+          <select class="field-select" id="shippingAddrSelect">
+            <option value="">— Select client first —</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Notes (Optional)</div>
+        <textarea class="field-textarea" id="orderNotes" placeholder="Delivery instructions, special requests…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-place-order" id="placeOrderBtn" onclick="placeOrder()">Place Order</button>
+    </div>
   </div>
 </div>
 
 <script>
+// ===== STEP META =====
 const STEP_META = {
   1: { icon: "📨", label: "Message Received",  color: "gray"   },
   2: { icon: "🔍", label: "SKU Resolution",    color: "teal"   },
@@ -81,8 +166,24 @@ const STEP_META = {
   6: { icon: "✨", label: "LLM Response",      color: "green"  },
 };
 
-let currentES = null;
+// ===== ORDER STATE =====
+let pendingCart = null;
+let selectedClient = null;
+let selectedPaymentMode = "advance";
+let clientSearchTimer = null;
 
+// ===== TAB SWITCHING =====
+function switchTab(tab) {
+  document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+  document.getElementById("tab-" + tab).classList.add("active");
+  document.getElementById("tabBtn" + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add("active");
+  if (tab === "pipeline") {
+    document.getElementById("pipelineBadge").textContent = "";
+  }
+}
+
+// ===== MESSAGING =====
 function sendQuick(btn) {
   document.getElementById("msgInput").value = btn.textContent;
   sendMessage();
@@ -97,10 +198,10 @@ function sendMessage() {
   appendUserBubble(msg);
   resetPipeline();
 
-  if (currentES) { currentES.close(); currentES = null; }
-
   document.getElementById("sendBtn").disabled = true;
+  document.getElementById("headerStatus").textContent = "Processing…";
   document.getElementById("pipelineSub").textContent = "Processing…";
+  document.getElementById("pipelineBadge").textContent = "●";
 
   fetch("/chat", {
     method: "POST",
@@ -110,12 +211,13 @@ function sendMessage() {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
-
     function read() {
       reader.read().then(({done, value}) => {
         if (done) {
           document.getElementById("sendBtn").disabled = false;
+          document.getElementById("headerStatus").textContent = "Ready";
           document.getElementById("pipelineSub").textContent = "Done";
+          document.getElementById("pipelineBadge").textContent = "✓";
           return;
         }
         buf += decoder.decode(value, {stream: true});
@@ -123,10 +225,7 @@ function sendMessage() {
         buf = parts.pop();
         for (const part of parts) {
           if (part.startsWith("data: ")) {
-            try {
-              const evt = JSON.parse(part.slice(6));
-              handleEvent(evt);
-            } catch(e) {}
+            try { handleEvent(JSON.parse(part.slice(6))); } catch(e) {}
           }
         }
         read();
@@ -135,7 +234,9 @@ function sendMessage() {
     read();
   }).catch(e => {
     document.getElementById("sendBtn").disabled = false;
+    document.getElementById("headerStatus").textContent = "Error";
     document.getElementById("pipelineSub").textContent = "Error";
+    document.getElementById("pipelineBadge").textContent = "!";
     console.error(e);
   });
 }
@@ -145,26 +246,26 @@ function resetPipeline() {
   document.getElementById("inventoryBar").style.display = "none";
 }
 
+// ===== EVENT DISPATCH =====
 function handleEvent(evt) {
   if (evt.step === "done") {
     appendBotBubble(evt.reply, evt.parsed);
     document.getElementById("sendBtn").disabled = false;
     return;
   }
-  if (evt.step === "inventory") {
-    renderInventory(evt.content);
-    return;
-  }
-  if (evt.step === "cart") {
-    handleCart(evt);
-    return;
-  }
+  if (evt.step === "inventory") { renderInventory(evt.content); return; }
+  if (evt.step === "cart")      { handleCart(evt); return; }
   renderStep(evt);
 }
 
+// ===== PIPELINE STEPS =====
 function renderStep(evt) {
   const meta = STEP_META[evt.step] || {};
   const container = document.getElementById("pipelineSteps");
+
+  // Remove empty state
+  const empty = container.querySelector(".pipeline-empty");
+  if (empty) empty.remove();
 
   const card = document.createElement("div");
   card.className = `step-card step-${evt.color || "gray"} step-entering`;
@@ -172,10 +273,12 @@ function renderStep(evt) {
   const header = document.createElement("div");
   header.className = "step-header";
   header.innerHTML = `
-    <span class="step-icon">${meta.icon || "⚙️"}</span>
-    <span class="step-label">Step ${evt.step} — ${evt.label}</span>
-    <span class="step-toggle">▾</span>
-  `;
+    <div class="step-icon-wrap">${meta.icon || "⚙️"}</div>
+    <div class="step-meta">
+      <div class="step-num">Step ${evt.step}</div>
+      <div class="step-label">${evt.label}</div>
+    </div>
+    <span class="step-toggle"></span>`;
 
   const body = document.createElement("div");
   body.className = "step-body";
@@ -183,22 +286,17 @@ function renderStep(evt) {
 
   header.onclick = () => {
     card.classList.toggle("collapsed");
-    header.querySelector(".step-toggle").textContent =
-      card.classList.contains("collapsed") ? "▸" : "▾";
   };
 
   card.appendChild(header);
   card.appendChild(body);
   container.appendChild(card);
   card.scrollIntoView({behavior: "smooth", block: "nearest"});
-
   setTimeout(() => card.classList.remove("step-entering"), 50);
 }
 
 function formatContent(step, content) {
-  if (step === 1) {
-    return `<div class="step-raw">"${escHtml(content)}"</div>`;
-  }
+  if (step === 1) return `<div class="step-raw">"${escHtml(content)}"</div>`;
   if (step === 2) {
     const skus = (content.matched_skus || []).map(s =>
       `<tr><td><code>${s.sku_code}</code></td><td>${escHtml(s.flavour)}</td>
@@ -206,8 +304,8 @@ function formatContent(step, content) {
        <td class="${s.stock === 0 ? 'stock-zero' : 'stock-ok'}">${s.stock} units</td></tr>`
     ).join("") || "<tr><td colspan='4'>No SKU resolved</td></tr>";
     return `
-      <div class="kv-row"><span>Flavour ID</span><code>${content.flavour_id ?? "—"}</code></div>
-      <div class="kv-row"><span>Format ID</span><code>${content.format_id ?? "—"}</code></div>
+      <div class="kv-row"><span>Flavour</span><code>${content.flavour_id ?? "—"}</code></div>
+      <div class="kv-row"><span>Format</span><code>${content.format_id ?? "—"}</code></div>
       <div class="kv-row"><span>Qty</span><code>${content.qty_requested}</code></div>
       <div class="kv-row"><span>Source</span><code>${escHtml(content.data_source)}</code></div>
       <table class="sku-table">
@@ -218,9 +316,9 @@ function formatContent(step, content) {
   if (step === 3) {
     const rows = (content.results || []).map((r, i) =>
       `<div class="chunk-row">
-         <div class="chunk-meta"><span class="chunk-rank">#${i+1}</span>
-           <span class="chunk-score">score: ${r.score}</span></div>
-         <div class="chunk-text">${escHtml(r.text)}</div>
+        <div class="chunk-meta"><span class="chunk-rank">#${i+1}</span>
+          <span class="chunk-score">score: ${r.score}</span></div>
+        <div class="chunk-text">${escHtml(r.text)}</div>
        </div>`
     ).join("");
     return `<div class="chunk-list">${rows}</div>`;
@@ -252,13 +350,12 @@ function formatContent(step, content) {
   return `<pre class="prompt-pre">${escHtml(JSON.stringify(content, null, 2))}</pre>`;
 }
 
+// ===== INVENTORY =====
 function renderInventory(rows) {
   const bar = document.getElementById("inventoryBar");
   const grid = document.getElementById("invGrid");
   bar.style.display = "";
   grid.innerHTML = "";
-
-  // Group by format
   const byFormat = {};
   for (const r of rows) {
     if (r.is_sample) continue;
@@ -266,10 +363,8 @@ function renderInventory(rows) {
     if (!byFormat[f]) byFormat[f] = [];
     byFormat[f].push(r);
   }
-
   for (const [fmt, items] of Object.entries(byFormat)) {
     const section = document.createElement("div");
-    section.className = "inv-section";
     section.innerHTML = `<div class="inv-format-label">${escHtml(fmt)}</div>`;
     for (const item of items) {
       const pct = Math.min(100, (item.stock / 50) * 100);
@@ -277,18 +372,15 @@ function renderInventory(rows) {
       section.innerHTML += `
         <div class="inv-item">
           <div class="inv-item-name">${escHtml(item.flavour_name)}</div>
-          <div class="inv-bar-wrap">
-            <div class="inv-bar ${cls}" style="width:${pct}%"></div>
-          </div>
+          <div class="inv-bar-wrap"><div class="inv-bar ${cls}" style="width:${pct}%"></div></div>
           <div class="inv-item-qty">${item.stock}</div>
         </div>`;
     }
     grid.appendChild(section);
   }
-
-  bar.scrollIntoView({behavior: "smooth", block: "nearest"});
 }
 
+// ===== CHAT BUBBLES =====
 function appendUserBubble(msg) {
   const chat = document.getElementById("chatMessages");
   const div = document.createElement("div");
@@ -314,90 +406,6 @@ function appendBotBubble(reply, parsed) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-function escHtml(str) {
-  if (typeof str !== "string") str = JSON.stringify(str) || "";
-  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-            .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
-}
-
-function now() {
-  return new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
-}
-</script>
-
-<!-- ===== CHECKOUT MODAL ===== -->
-<div class="modal-overlay" id="checkoutModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>🛒 Place Order</h2>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-section">
-        <div class="modal-section-title">Order Summary</div>
-        <table class="modal-cart-table">
-          <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
-          <tbody id="modalCartRows"></tbody>
-        </table>
-        <div class="modal-total-line">
-          <span>Subtotal:</span><span id="modalSubtotal">₹0</span>
-        </div>
-      </div>
-      <div class="modal-section">
-        <div class="modal-section-title">Client</div>
-        <div class="field-group client-search-wrap">
-          <label class="field-label">Search by name, phone, or GST</label>
-          <input class="field-input" id="clientSearchInput" type="text"
-            placeholder="Type to search…" autocomplete="off"
-            oninput="debounceClientSearch(this.value)" />
-          <div class="client-dropdown" id="clientDropdown"></div>
-        </div>
-        <div id="selectedClientInfo" style="display:none;font-size:12px;color:var(--brand);margin-top:-6px;padding:6px 10px;background:var(--brand-lt);border-radius:6px;">
-          <span id="selectedClientText"></span>
-          <a href="#" style="margin-left:10px;color:var(--gray-600);font-size:11px;" onclick="clearClient(event)">change</a>
-        </div>
-      </div>
-      <div class="modal-section">
-        <div class="modal-section-title">Payment Mode</div>
-        <div class="payment-radio-group" id="paymentModes">
-          <label id="pm-advance" class="selected" onclick="selectPayment('advance')">
-            <input type="radio" name="pm" value="advance" checked /><span>Advance</span>
-          </label>
-          <label id="pm-invoice" onclick="selectPayment('invoice')">
-            <input type="radio" name="pm" value="invoice" /><span>Invoice</span>
-          </label>
-          <label id="pm-credit" onclick="selectPayment('credit')">
-            <input type="radio" name="pm" value="credit" /><span>Credit</span>
-          </label>
-        </div>
-      </div>
-      <div class="modal-section">
-        <div class="modal-section-title">Shipping Address</div>
-        <div class="field-group">
-          <select class="field-select" id="shippingAddrSelect">
-            <option value="">— Select client first —</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-section">
-        <div class="modal-section-title">Notes (optional)</div>
-        <textarea class="field-textarea" id="orderNotes" placeholder="Delivery instructions, special requests…"></textarea>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-modal-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-place-order" id="placeOrderBtn" onclick="placeOrder()">Place Order</button>
-    </div>
-  </div>
-</div>
-
-<script>
-// ===== ORDER FLOW STATE =====
-let pendingCart = null;
-let selectedClient = null;
-let selectedPaymentMode = "advance";
-let clientSearchTimer = null;
-
 // ===== CART BUBBLE =====
 function handleCart(evt) {
   pendingCart = evt;
@@ -407,17 +415,21 @@ function handleCart(evt) {
   div.className = "chat-bubble bot";
   const rows = (evt.items || []).map(item => {
     const st = item.can_fulfill
-      ? `<td class="ok">✓ ${item.stock}</td>`
+      ? `<td class="ok">✓ ${item.stock} avail</td>`
       : `<td class="oos">⚠ ${item.stock} only</td>`;
-    return `<tr><td>${escHtml(item.flavour_name)}</td><td>${escHtml(item.format_name)}</td>
-      <td>${item.qty}</td><td>${fmt(item.unit_price)}</td>
-      <td>${fmt(item.qty * item.unit_price)}</td>${st}</tr>`;
+    return `<tr>
+      <td>${escHtml(item.flavour_name)}</td>
+      <td>${escHtml(item.format_name)}</td>
+      <td><strong>${item.qty}</strong></td>
+      <td>${fmt(item.unit_price)}</td>
+      <td>${fmt(item.qty * item.unit_price)}</td>
+      ${st}</tr>`;
   }).join("");
   div.innerHTML = `
     <div class="cart-bubble">
       <div class="cart-title">🛒 Order Cart</div>
       <table class="cart-table">
-        <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit</th><th>Total</th><th>Stock</th></tr></thead>
+        <thead><tr><th>Item</th><th>Format</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Stock</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
       <div class="cart-total-row">
@@ -426,7 +438,7 @@ function handleCart(evt) {
       </div>
       <div class="cart-actions">
         <button class="btn-confirm" onclick="openCheckout()">✓ Confirm &amp; Place Order</button>
-        <button class="btn-cancel" onclick="this.closest('.cart-bubble').remove()">Cancel</button>
+        <button class="btn-cancel" onclick="this.closest('.chat-bubble').remove()">Cancel</button>
       </div>
     </div>
     <div class="bubble-time">${now()}</div>`;
@@ -438,13 +450,15 @@ function handleCart(evt) {
 function openCheckout() {
   if (!pendingCart) return;
   const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 0});
-  const tbody = document.getElementById("modalCartRows");
-  tbody.innerHTML = (pendingCart.items || []).map(i => `
-    <tr><td>${escHtml(i.flavour_name)}</td><td>${escHtml(i.format_name)}</td>
-    <td>${i.qty}</td><td>${fmt(i.unit_price)}</td><td>${fmt(i.qty * i.unit_price)}</td></tr>`).join("");
+  document.getElementById("modalCartRows").innerHTML =
+    (pendingCart.items || []).map(i => `
+      <tr><td>${escHtml(i.flavour_name)}</td><td>${escHtml(i.format_name)}</td>
+      <td>${i.qty}</td><td>${fmt(i.unit_price)}</td><td>${fmt(i.qty * i.unit_price)}</td></tr>`
+    ).join("");
   document.getElementById("modalSubtotal").textContent = fmt(pendingCart.subtotal);
   document.getElementById("clientSearchInput").value = "";
   document.getElementById("clientDropdown").classList.remove("open");
+  document.getElementById("clientSearchWrap").style.display = "block";
   document.getElementById("selectedClientInfo").style.display = "none";
   document.getElementById("shippingAddrSelect").innerHTML = "<option value=''>— Select client first —</option>";
   document.getElementById("orderNotes").value = "";
@@ -466,22 +480,24 @@ function debounceClientSearch(val) {
   clientSearchTimer = setTimeout(() => _searchClients(val), 300);
 }
 function _searchClients(q) {
-  if (q.length < 2) { document.getElementById("clientDropdown").classList.remove("open"); return; }
+  const dd = document.getElementById("clientDropdown");
+  if (q.length < 2) { dd.classList.remove("open"); return; }
   fetch(`/api/clients/search?q=${encodeURIComponent(q)}`)
     .then(r => r.json())
     .then(data => {
-      const dd = document.getElementById("clientDropdown");
       const clients = data.clients || [];
-      if (!clients.length) {
-        dd.innerHTML = `<div class="client-option" style="color:var(--gray-400)">No clients found</div>`;
+      if (data.error) {
+        dd.innerHTML = `<div class="client-option err">⚠ ${escHtml(data.error)}</div>
+          <div class="client-option muted">${escHtml(data.hint||"Set SUPABASE_SERVICE_KEY env var")}</div>`;
+      } else if (!clients.length) {
+        dd.innerHTML = `<div class="client-option muted">No clients found for "${escHtml(q)}"</div>`;
       } else {
-        dd.innerHTML = clients.map(c => {
-          const cj = escHtml(JSON.stringify(c));
-          return `<div class="client-option" onclick='selectClient(${c.id}, ${JSON.stringify(JSON.stringify(c))})'>
-            <div>${escHtml(c.business_name)}</div>
-            <div class="client-sub">${escHtml(c.primary_contact_phone||"")}${c.gstin?" · "+escHtml(c.gstin):""}</div>
-          </div>`;
-        }).join("");
+        dd.innerHTML = clients.map(c =>
+          `<div class="client-option" onclick='selectClient(${c.id}, ${JSON.stringify(JSON.stringify(c))})'>
+            <div class="co-name">${escHtml(c.business_name)}</div>
+            <div class="co-sub">${escHtml(c.primary_contact_phone||"")}${c.gstin?" · "+escHtml(c.gstin):""}</div>
+          </div>`
+        ).join("");
       }
       dd.classList.add("open");
     }).catch(()=>{});
@@ -490,7 +506,7 @@ function selectClient(id, clientJson) {
   const c = JSON.parse(clientJson);
   selectedClient = c;
   document.getElementById("clientDropdown").classList.remove("open");
-  document.getElementById("clientSearchInput").value = "";
+  document.getElementById("clientSearchWrap").style.display = "none";
   document.getElementById("selectedClientText").textContent =
     c.business_name + (c.primary_contact_phone ? " · " + c.primary_contact_phone : "");
   document.getElementById("selectedClientInfo").style.display = "block";
@@ -508,6 +524,8 @@ function clearClient(e) {
   e.preventDefault();
   selectedClient = null;
   document.getElementById("selectedClientInfo").style.display = "none";
+  document.getElementById("clientSearchWrap").style.display = "block";
+  document.getElementById("clientSearchInput").value = "";
   document.getElementById("shippingAddrSelect").innerHTML = "<option value=''>— Select client first —</option>";
 }
 
@@ -534,8 +552,7 @@ function placeOrder() {
   const btn = document.getElementById("placeOrderBtn");
   btn.disabled = true; btn.textContent = "Placing order…";
   fetch("/api/orders", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
+    method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
       client_id: selectedClient.id, payment_mode: selectedPaymentMode,
       billing_address_id: shippingId, shipping_address_id: shippingId,
@@ -546,7 +563,7 @@ function placeOrder() {
     closeModal();
     if (data.ok) { appendOrderConfirmedBubble(data.order); pendingCart = null; }
     else alert("Order failed: " + (data.error||"Unknown error"));
-  }).catch(e=>{ btn.disabled=false; btn.textContent="Place Order"; alert("Network error: "+e.message); });
+  }).catch(e=>{ btn.disabled=false; btn.textContent="Place Order"; alert("Error: "+e.message); });
 }
 
 function appendOrderConfirmedBubble(order) {
@@ -554,12 +571,12 @@ function appendOrderConfirmedBubble(order) {
   const chat = document.getElementById("chatMessages");
   const div = document.createElement("div");
   div.className = "chat-bubble bot";
-  const lines = (order.lines||[]).map(l=>
+  const lines = (order.lines||[]).map(l =>
     `${l.quantity} × ${escHtml(l.flavour_name)} ${escHtml(l.format_name)} — ${fmt(l.line_total)}`
   ).join("<br>");
   div.innerHTML = `
     <div class="order-confirmed-bubble">
-      <div class="order-confirmed-title">✅ Order Confirmed!</div>
+      <div class="order-confirmed-title">✅ Order Confirmed</div>
       <div class="order-confirmed-no">${escHtml(order.order_no)}</div>
       <div class="order-confirmed-detail">
         ${lines}<br>
@@ -572,6 +589,16 @@ function appendOrderConfirmedBubble(order) {
     <div class="bubble-time">${now()}</div>`;
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+}
+
+// ===== UTILS =====
+function escHtml(str) {
+  if (typeof str !== "string") str = JSON.stringify(str) || "";
+  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+            .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+function now() {
+  return new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
 }
 </script>
 </body>

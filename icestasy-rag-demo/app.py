@@ -2,6 +2,12 @@ import json
 import time
 from flask import Flask, render_template, request, Response, stream_with_context
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from rag_engine import (
     resolve_sku, vector_search, get_stock, build_prompt,
     call_llm, get_all_stock, parse_cart_items, SYSTEM_PROMPT, DATA_SOURCE,
@@ -31,9 +37,12 @@ def api_clients_search():
         return {"clients": []}
     try:
         from order_engine import search_clients
-        return {"clients": search_clients(q)}
+        clients = search_clients(q)
+        return {"clients": clients}
+    except RuntimeError as e:
+        return {"clients": [], "error": str(e), "hint": "Set SUPABASE_SERVICE_KEY in your .env or run.ps1"}, 200
     except Exception as e:
-        return {"clients": [], "error": str(e)}, 200
+        return {"clients": [], "error": f"{type(e).__name__}: {e}"}, 200
 
 
 @app.route("/api/clients/<int:client_id>/addresses")
