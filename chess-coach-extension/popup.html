@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 0;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #16213e, #0f3460);
+      padding: 20px;
+      text-align: center;
+      border-bottom: 1px solid #333;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .header p {
+      font-size: 11px;
+      color: #888;
+    }
+
+    .section {
+      padding: 16px 20px;
+      border-bottom: 1px solid #222;
+    }
+
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #666;
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    .setting {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .setting:last-child { margin-bottom: 0; }
+
+    .setting-label {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .setting-desc {
+      font-size: 11px;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #333;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background: #888;
+      border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .toggle input:checked + .toggle-slider {
+      background: rgba(76, 175, 80, 0.4);
+    }
+
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(20px);
+      background: #66bb6a;
+    }
+
+    select {
+      background: #222;
+      color: #e0e0e0;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    select:focus {
+      border-color: #66bb6a;
+    }
+
+    .status {
+      padding: 12px 20px;
+      text-align: center;
+      font-size: 11px;
+      color: #666;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .status-dot.active { background: #66bb6a; }
+    .status-dot.inactive { background: #f44336; }
+
+    .keyboard-hint {
+      padding: 10px 20px 14px;
+      text-align: center;
+      font-size: 11px;
+      color: #555;
+    }
+
+    kbd {
+      background: #333;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Chess Coach</h1>
+    <p>Position analysis for chess.com</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title">General</div>
+    <div class="setting">
+      <div>
+        <div class="setting-label">Enable Coach</div>
+        <div class="setting-desc">Show analysis panel on chess.com</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="enabled" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting">
+      <div>
+        <div class="setting-label">Auto-Analyze</div>
+        <div class="setting-desc">Analyze after each move</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="autoAnalyze" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Display</div>
+    <div class="setting">
+      <div>
+        <div class="setting-label">Show Arrows</div>
+        <div class="setting-desc">Draw move arrows on board</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="showArrows" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting">
+      <div>
+        <div class="setting-label">Show Panel</div>
+        <div class="setting-desc">Show analysis side panel</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="showPanel" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Engine</div>
+    <div class="setting">
+      <div>
+        <div class="setting-label">Analysis Depth</div>
+        <div class="setting-desc">Higher = stronger but slower</div>
+      </div>
+      <select id="depth">
+        <option value="3">3 (Fast)</option>
+        <option value="4">4 (Quick)</option>
+        <option value="5" selected>5 (Normal)</option>
+        <option value="6">6 (Deep)</option>
+        <option value="7">7 (Very Deep)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="status">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Checking...</span>
+  </div>
+
+  <div class="keyboard-hint">
+    Navigate to chess.com to start analyzing
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

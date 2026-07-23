@@ -1,0 +1,272 @@
+#chess-coach-panel {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 300px;
+  max-height: 80vh;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  z-index: 99999;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  user-select: none;
+}
+
+.cc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #16213e, #0f3460);
+  cursor: grab;
+  border-bottom: 1px solid #333;
+}
+
+.cc-header:active {
+  cursor: grabbing;
+}
+
+.cc-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.cc-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.cc-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.cc-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.cc-analyze-btn {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: rgba(76, 175, 80, 0.5);
+}
+
+.cc-analyze-btn:hover {
+  background: rgba(76, 175, 80, 0.5);
+}
+
+.cc-body {
+  padding: 12px 14px;
+  overflow-y: auto;
+  max-height: calc(80vh - 50px);
+}
+
+.cc-status {
+  color: #888;
+  font-size: 11px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.cc-eval-bar-container {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cc-eval-bar {
+  flex: 1;
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cc-eval-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.cc-eval-fill.cc-eval-white {
+  background: linear-gradient(90deg, #e0e0e0, #fff);
+}
+
+.cc-eval-fill.cc-eval-black {
+  background: linear-gradient(90deg, #555, #333);
+}
+
+.cc-eval-score {
+  font-weight: 700;
+  font-size: 16px;
+  min-width: 55px;
+  text-align: right;
+  color: #fff;
+}
+
+.cc-section {
+  margin-bottom: 12px;
+}
+
+.cc-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.cc-move-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.cc-move-san {
+  font-size: 22px;
+  font-weight: 700;
+  color: #66bb6a;
+  font-family: 'Courier New', monospace;
+}
+
+.cc-move-eval {
+  font-size: 16px;
+  font-weight: 600;
+  color: #aaa;
+}
+
+.cc-move-detail {
+  font-size: 11px;
+  color: #666;
+  margin-top: 4px;
+  text-align: center;
+}
+
+.cc-line {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  gap: 8px;
+}
+
+.cc-line:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cc-line-best {
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.cc-line-rank {
+  color: #666;
+  font-size: 11px;
+  min-width: 18px;
+}
+
+.cc-line-san {
+  flex: 1;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.cc-line-best .cc-line-san {
+  color: #66bb6a;
+}
+
+.cc-line-eval {
+  color: #888;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cc-threat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: rgba(244, 67, 54, 0.08);
+  font-size: 12px;
+}
+
+.cc-threat-icon {
+  font-size: 14px;
+}
+
+.cc-threat-text {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.cc-tactic {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: rgba(33, 150, 243, 0.1);
+  border-left: 3px solid #42a5f5;
+}
+
+.cc-tactic-type {
+  display: block;
+  font-weight: 700;
+  font-size: 11px;
+  color: #42a5f5;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.cc-tactic-desc {
+  font-size: 12px;
+  line-height: 1.3;
+  color: #ccc;
+}
+
+.cc-tip {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.1);
+  border-left: 3px solid #ffc107;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #ddd;
+}
+
+.cc-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cc-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cc-body::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.cc-body::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
