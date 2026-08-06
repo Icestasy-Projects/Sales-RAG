@@ -136,49 +136,6 @@
         </div>
       </div>
       <div class="modal-section">
-        <div class="modal-section-title">Discount</div>
-        <div class="discount-chip-group" id="discountChips">
-          <label class="discount-chip selected" onclick="selectDiscount(0)" id="disc-0">
-            <input type="radio" name="disc" value="0" checked /><span>None</span>
-          </label>
-          <label class="discount-chip" onclick="selectDiscount(5)" id="disc-5">
-            <input type="radio" name="disc" value="5" /><span>5% (Nashik)</span>
-          </label>
-          <label class="discount-chip" onclick="selectDiscount(15)" id="disc-15">
-            <input type="radio" name="disc" value="15" /><span>15%</span>
-          </label>
-          <label class="discount-chip" onclick="selectDiscount(16)" id="disc-16">
-            <input type="radio" name="disc" value="16" /><span>16%</span>
-          </label>
-          <label class="discount-chip" onclick="selectDiscount(16.5)" id="disc-16_5">
-            <input type="radio" name="disc" value="16.5" /><span>16.5%</span>
-          </label>
-          <label class="discount-chip" onclick="showCustomDiscount()" id="disc-custom">
-            <input type="radio" name="disc" value="custom" /><span>Custom</span>
-          </label>
-        </div>
-        <div class="discount-custom-row" id="discountCustomRow" style="display:none">
-          <input class="field-input discount-custom-input" id="discountCustomInput" type="number"
-            min="0" max="100" step="0.5" placeholder="Enter %" oninput="applyCustomDiscount()" />
-          <span class="discount-custom-suffix">%</span>
-        </div>
-        <div class="discount-advance-note" id="discountAdvanceNote" style="display:none">
-          + 2.5% advance payment discount applied automatically
-        </div>
-        <div class="discount-summary" id="discountSummary" style="display:none">
-          <div class="discount-summary-line">
-            <span>Subtotal</span><span id="discSubtotal">₹0</span>
-          </div>
-          <div class="discount-summary-line discount-highlight">
-            <span>Discount (<span id="discPctLabel">0%</span>)</span>
-            <span>−<span id="discAmount">₹0</span></span>
-          </div>
-          <div class="discount-summary-line discount-total">
-            <span>Total</span><span id="discTotal">₹0</span>
-          </div>
-        </div>
-      </div>
-      <div class="modal-section">
         <div class="modal-section-title">Shipping Address</div>
         <div class="field-group">
           <select class="field-select" id="shippingAddrSelect">
@@ -213,8 +170,6 @@ const STEP_META = {
 let pendingCart = null;
 let selectedClient = null;
 let selectedPaymentMode = "advance";
-let selectedDiscountPct = 0;
-let advanceBonusPct = 2.5;
 let clientSearchTimer = null;
 
 // ===== TAB SWITCHING =====
@@ -532,9 +487,6 @@ function openCheckout() {
   document.getElementById("shippingAddrSelect").innerHTML = "<option value=''>— Select client first —</option>";
   document.getElementById("orderNotes").value = "";
   selectedClient = null;
-  selectDiscount(0);
-  document.getElementById("discountCustomRow").style.display = "none";
-  document.getElementById("discountCustomInput").value = "";
   selectPayment("advance");
   document.getElementById("checkoutModal").classList.add("open");
 }
@@ -621,54 +573,6 @@ function selectPayment(mode) {
     const el = document.getElementById("pm-"+m);
     if (el) el.classList.toggle("selected", m === mode);
   });
-  updateDiscountSummary();
-}
-
-// ===== DISCOUNT =====
-function selectDiscount(pct) {
-  selectedDiscountPct = pct;
-  document.getElementById("discountCustomRow").style.display = "none";
-  document.querySelectorAll(".discount-chip").forEach(el => el.classList.remove("selected"));
-  const chipId = pct === 0 ? "disc-0" : pct === 5 ? "disc-5" : pct === 15 ? "disc-15"
-    : pct === 16 ? "disc-16" : pct === 16.5 ? "disc-16_5" : "disc-custom";
-  document.getElementById(chipId).classList.add("selected");
-  updateDiscountSummary();
-}
-function showCustomDiscount() {
-  document.querySelectorAll(".discount-chip").forEach(el => el.classList.remove("selected"));
-  document.getElementById("disc-custom").classList.add("selected");
-  document.getElementById("discountCustomRow").style.display = "flex";
-  const inp = document.getElementById("discountCustomInput");
-  inp.focus();
-  selectedDiscountPct = parseFloat(inp.value) || 0;
-  updateDiscountSummary();
-}
-function applyCustomDiscount() {
-  selectedDiscountPct = parseFloat(document.getElementById("discountCustomInput").value) || 0;
-  if (selectedDiscountPct < 0) selectedDiscountPct = 0;
-  if (selectedDiscountPct > 100) selectedDiscountPct = 100;
-  updateDiscountSummary();
-}
-function getEffectiveDiscountPct() {
-  let pct = selectedDiscountPct;
-  if (selectedPaymentMode === "advance") pct += advanceBonusPct;
-  return pct;
-}
-function updateDiscountSummary() {
-  const advNote = document.getElementById("discountAdvanceNote");
-  advNote.style.display = selectedPaymentMode === "advance" ? "block" : "none";
-  const subtotal = pendingCart ? pendingCart.items.reduce((s, i) => s + i.qty * i.unit_price, 0) : 0;
-  const pct = getEffectiveDiscountPct();
-  const summaryEl = document.getElementById("discountSummary");
-  if (pct === 0) { summaryEl.style.display = "none"; return; }
-  summaryEl.style.display = "block";
-  const discAmt = subtotal * pct / 100;
-  const total = subtotal - discAmt;
-  const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 2});
-  document.getElementById("discSubtotal").textContent = fmt(subtotal);
-  document.getElementById("discPctLabel").textContent = pct + "%";
-  document.getElementById("discAmount").textContent = fmt(discAmt);
-  document.getElementById("discTotal").textContent = fmt(total);
 }
 
 // ===== PLACE ORDER =====
@@ -682,7 +586,6 @@ function placeOrder() {
     flavour_name: i.flavour_name, format_name: i.format_name,
     quantity: i.qty, unit_price: i.unit_price, line_discount: 0,
   }));
-  const discountPct = getEffectiveDiscountPct();
   const btn = document.getElementById("placeOrderBtn");
   btn.disabled = true; btn.textContent = "Placing order…";
   fetch("/api/orders", {
@@ -690,7 +593,7 @@ function placeOrder() {
     body: JSON.stringify({
       client_id: selectedClient.id, payment_mode: selectedPaymentMode,
       billing_address_id: shippingId, shipping_address_id: shippingId,
-      lines, notes, discount_pct: discountPct,
+      lines, notes,
     }),
   }).then(r=>r.json()).then(data=>{
     btn.disabled = false; btn.textContent = "Place Order";
@@ -715,7 +618,7 @@ function appendOrderConfirmedBubble(order) {
       <div class="order-confirmed-detail">
         ${lines}<br>
         <strong>Subtotal:</strong> ${fmt(order.subtotal)}<br>
-        <strong>Discount${order.discount_pct ? ` (${order.discount_pct}%)` : ''}:</strong> ${fmt(order.discount)}<br>
+        <strong>Discount:</strong> ${fmt(order.discount)}<br>
         <strong>Total:</strong> ${fmt(order.total)}<br>
         <strong>Payment:</strong> ${escHtml(order.payment_mode||"")}
       </div>

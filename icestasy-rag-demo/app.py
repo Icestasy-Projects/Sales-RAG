@@ -69,7 +69,6 @@ def api_create_order():
             billing_address_id=body.get("billing_address_id"),
             shipping_address_id=body.get("shipping_address_id"),
             notes=body.get("notes"),
-            discount_pct=body.get("discount_pct", 0),
         )
         return {"ok": True, "order": order}
     except Exception as e:
@@ -236,10 +235,6 @@ _wa_sessions: dict = {}
 PAYMENT_OPTIONS = {"1": "advance", "2": "invoice", "3": "credit",
                    "advance": "advance", "invoice": "invoice", "credit": "credit"}
 
-DISCOUNT_OPTIONS = {"1": 0, "2": 5, "3": 15, "4": 16, "5": 16.5,
-                    "0": 0, "5%": 5, "15%": 15, "16%": 16, "16.5%": 16.5,
-                    "none": 0, "nashik": 5}
-
 
 def _wa_send(to: str, text: str):
     if not WA_TOKEN or not WA_PHONE_ID:
@@ -319,35 +314,9 @@ def _handle_wa_message(from_no: str, text: str) -> str:
         if not payment:
             return "Please reply 1 (Advance), 2 (Invoice), or 3 (Credit)."
         sess["payment"] = payment
-        sess["state"]   = "discount"
+        sess["state"]   = "client_search"
         _wa_sessions[from_no] = sess
-        advance_note = "\n_+2.5% advance payment discount will be added automatically_" if payment == "advance" else ""
-        return (
-            f"✅ Payment: *{payment.title()}*\n\n"
-            "🏷️ *Discount?*\n\n"
-            "1. None\n2. 5% (Nashik)\n3. 15%\n4. 16%\n5. 16.5%\n\n"
-            f"Reply with a number, or type a custom % (e.g. 12).{advance_note}"
-        )
-
-    # ── DISCOUNT: waiting for discount selection ───────────────────────────
-    if state == "discount":
-        disc = DISCOUNT_OPTIONS.get(t)
-        if disc is None:
-            try:
-                disc = float(t.replace("%", ""))
-                if disc < 0 or disc > 100:
-                    disc = None
-            except ValueError:
-                disc = None
-        if disc is None:
-            return "Please reply with a number (1-5) or type a discount % (e.g. 12)."
-        if sess["payment"] == "advance":
-            disc += 2.5
-        sess["discount_pct"] = disc
-        sess["state"] = "client_search"
-        _wa_sessions[from_no] = sess
-        disc_label = f"{disc}%" if disc > 0 else "None"
-        return f"✅ Discount: *{disc_label}*\n\nNow type the *client name* or phone number to search."
+        return f"✅ Payment: *{payment.title()}*\n\nNow type the *client name* or phone number to search."
 
     # ── CLIENT SEARCH: waiting for search query ──────────────────────────────
     if state == "client_search":
@@ -429,22 +398,12 @@ def _confirm_prompt(sess):
     client  = sess["client"]
     payment = sess["payment"]
     cart    = sess["cart"]
-    disc_pct = sess.get("discount_pct", 0)
     summary = _cart_summary(cart)
-    subtotal = sum(i["qty"] * i["unit_price"] for i in cart)
-    disc_line = ""
-    if disc_pct > 0:
-        disc_amt = subtotal * disc_pct / 100
-        total = subtotal - disc_amt
-        disc_line = (
-            f"\n*Discount:* {disc_pct}% (−{_fmt_inr(disc_amt)})"
-            f"\n*Total after discount: {_fmt_inr(total)}*"
-        )
     return (
         f"📋 *Order Summary*\n\n"
         f"*Client:* {client['business_name']}\n"
         f"*Payment:* {payment.title()}\n\n"
-        f"{summary}{disc_line}\n\n"
+        f"{summary}\n\n"
         "Reply *yes* to place this order or *cancel* to discard."
     )
 
@@ -456,7 +415,6 @@ def _place_order(from_no: str, sess: dict) -> str:
         client  = sess["client"]
         payment = sess["payment"]
         ship_id = sess.get("shipping_id")
-        disc_pct = sess.get("discount_pct", 0)
         lines = [{
             "sku_id":        i["sku_id"],
             "sku_code":      i["sku_code"],
@@ -472,7 +430,6 @@ def _place_order(from_no: str, sess: dict) -> str:
             lines=lines,
             shipping_address_id=ship_id,
             billing_address_id=ship_id,
-            discount_pct=disc_pct,
         )
         total    = order.get("total", sum(i["qty"] * i["unit_price"] for i in cart))
         order_no = order.get("order_no", "#")
@@ -481,17 +438,12 @@ def _place_order(from_no: str, sess: dict) -> str:
             f"  • {i['qty']} × {i['flavour_name']} {i['format_name']} — {_fmt_inr(i['qty']*i['unit_price'])}"
             for i in cart
         )
-        disc_line = ""
-        if disc_pct > 0:
-            subtotal = sum(i["qty"] * i["unit_price"] for i in cart)
-            disc_line = f"*Discount:* {disc_pct}% (−{_fmt_inr(subtotal * disc_pct / 100)})\n"
         return (
             f"✅ *Order Confirmed!*\n\n"
             f"*Order No:* {order_no}\n"
             f"*Client:* {client['business_name']}\n"
             f"*Payment:* {payment.title()}\n\n"
             f"{item_lines}\n\n"
-            f"{disc_line}"
             f"*Total: {_fmt_inr(total)}*\n\n"
             "Order has been registered in the system. 🎉"
         )
