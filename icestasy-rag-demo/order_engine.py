@@ -126,17 +126,21 @@ def create_order(
     shipping_address_id=None,
     notes: str = None,
     salesperson_id: int = 1,
+    discount_pct: float = 0,
 ) -> dict:
     """
     lines: [{"sku_id": int, "sku_code": str, "flavour_name": str,
               "format_name": str, "quantity": int, "unit_price": float,
               "line_discount": float}]
+    discount_pct: order-level discount percentage (e.g. 16.5 for 16.5%)
     Returns the created order dict with nested lines.
     """
     sb = _sb()
 
     subtotal = sum(l["quantity"] * l["unit_price"] for l in lines)
-    discount = sum(l.get("line_discount", 0.0) * l["quantity"] for l in lines)
+    line_discount = sum(l.get("line_discount", 0.0) * l["quantity"] for l in lines)
+    order_discount = round(subtotal * float(discount_pct) / 100, 2) if discount_pct else 0
+    discount = line_discount + order_discount
     total = subtotal - discount
 
     order_no = _next_order_no(sb)
@@ -186,6 +190,7 @@ def create_order(
         **order_res.data[0],
         "subtotal": subtotal,
         "discount": discount,
+        "discount_pct": float(discount_pct) if discount_pct else 0,
         "total": total,
         "lines": [
             {

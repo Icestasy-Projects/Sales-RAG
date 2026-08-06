@@ -325,6 +325,37 @@ code.sql {
 }
 .payment-radio-group input[type=radio] { display: none; }
 .payment-radio-group label.selected { border-color: var(--brand); background: var(--brand-lt); color: var(--brand); }
+
+/* ── Discount chips ───────────────────────────────── */
+.discount-chip-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.discount-chip {
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px;
+  border: 1.5px solid var(--slate-200); border-radius: 22px; cursor: pointer;
+  font-size: 12px; font-weight: 600; transition: all .15s; color: var(--slate-600);
+}
+.discount-chip input[type=radio] { display: none; }
+.discount-chip.selected { border-color: var(--brand); background: var(--brand-lt); color: var(--brand); }
+.discount-custom-row {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px; max-width: 160px;
+}
+.discount-custom-input {
+  width: 80px; padding: 6px 10px; font-size: 13px; border: 1.5px solid var(--slate-200);
+  border-radius: 8px; text-align: right; font-weight: 600;
+}
+.discount-custom-input:focus { border-color: var(--brand); outline: none; }
+.discount-custom-suffix { font-size: 13px; font-weight: 700; color: var(--slate-500); }
+.discount-advance-note {
+  margin-top: 8px; font-size: 11px; color: var(--brand); font-weight: 600;
+  padding: 5px 10px; background: var(--brand-xlt); border-radius: 6px;
+}
+.discount-summary {
+  margin-top: 12px; font-size: 12px; border-top: 1px solid var(--slate-100);
+  padding-top: 10px;
+}
+.discount-summary-line { display: flex; justify-content: space-between; padding: 3px 0; color: var(--slate-600); }
+.discount-summary-line.discount-highlight { color: #d14343; font-weight: 600; }
+.discount-summary-line.discount-total { font-weight: 800; color: var(--brand); font-size: 13px; border-top: 1px solid var(--slate-200); padding-top: 6px; margin-top: 4px; }
+
 .modal-footer { padding: 14px 22px 20px; border-top: 1px solid var(--slate-200); display: flex; gap: 10px; justify-content: flex-end; }
 .btn-place-order {
   padding: 10px 26px; background: var(--brand); color: var(--white);
